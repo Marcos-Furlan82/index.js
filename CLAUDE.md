@@ -5,7 +5,7 @@
 Os agentes ficam em `.claude/agents/`:
 
 - **Desenvolvimento**: `arquiteto`, `critico`, `implementador`
-- **Especialistas**: `especialista-marketing`, `especialista-comunicacao`, `especialista-planejamento`, `especialista-viralizacao`, `especialista-instagram`, `especialista-imagem`
+- **Especialistas**: `especialista-marketing`, `especialista-comunicacao`, `especialista-planejamento`, `especialista-viralizacao`, `especialista-instagram`, `especialista-imagem`, `especialista-identidade-visual`
 - **Produtos**: `produto-<nome>` (um por produto divulgado)
 
 ## Comandos
