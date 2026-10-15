@@ -24,3 +24,13 @@ export async function criarUsuario(email = "gestor@exemplo.com", senha = "senha-
     data: { email, nome: "Gestor", senhaHash: await gerarHashSenha(senha) },
   });
 }
+
+/** Cria usuário + sessão e coloca o cookie na requisição falsa (next-falso.ts). */
+export async function entrarComoGestor() {
+  const { criarSessaoNoBanco, nomeCookieSessao } = await import("@/auth/sessao");
+  const { requisicaoFalsa } = await import("./next-falso");
+  const usuario = await criarUsuario();
+  const { token } = await criarSessaoNoBanco(obterDb(), usuario.id);
+  requisicaoFalsa.cookies.set(nomeCookieSessao(), token);
+  return usuario;
+}
