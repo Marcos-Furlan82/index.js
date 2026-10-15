@@ -1,6 +1,6 @@
 # Plano de construção: planejador e publicador de posts no Instagram
 
-> Versão 2. Consolidado a partir das consultas aos agentes `especialista-instagram`, `especialista-imagem` e `especialista-marketing`, com as decisões do gestor (seção 10).
+> Versão 3. Consolidado a partir das consultas aos agentes `especialista-instagram`, `especialista-imagem` e `especialista-marketing`, com as decisões do gestor (seção 10).
 > Itens marcados com ⚠️ precisam ser reconfirmados na documentação oficial da Meta antes de virar código.
 
 ---
@@ -11,7 +11,7 @@ O sistema recebe o acesso a uma conta de Instagram e entende o negócio, o públ
 
 ### Princípios
 
-1. **O humano decide, a máquina executa.** Nada é publicado sem uma prévia aprovada, e nenhuma mudança de estratégia é aplicada sem aprovação.
+1. **O humano decide, a máquina executa.** Nada é publicado sem a aprovação da semana, e nenhuma mudança de estratégia é aplicada sem aprovação. Aprovada a semana, o sistema roda sozinho.
 2. **Nunca guardar usuário e senha do Instagram.** A conta é conectada por OAuth oficial da Meta (veja a seção 3).
 3. **A marca é sagrada.** Logo, cores e textos das artes vêm sempre de templates baseados no manual de identidade visual. A IA de imagem só gera elementos de apoio.
 4. **Regras explícitas, IA para o resto.** Matrizes de estratégia, limites da API e regras de nicho ficam em código e configuração. A IA trabalha dentro dessas regras.
@@ -23,7 +23,7 @@ O sistema recebe o acesso a uma conta de Instagram e entende o negócio, o públ
 
 | Quem | Responsabilidade |
 |---|---|
-| **Gestor (humano)** | Cria a conta, converte para conta profissional e autoriza o app via OAuth. Responde ao briefing, envia artes de referência e informa a isca. Aprova a prévia, o plano e as propostas de ajuste. Faz manualmente o que a API não permite. |
+| **Gestor (humano)** | Cria a conta, converte para conta profissional e autoriza o app via OAuth. Responde ao briefing, envia artes de referência e informa a isca. Aprova o **pacote semanal de domingo** (plano da semana + propostas de ajuste) e define o orçamento. Faz manualmente o que a API não permite. |
 | **Sistema** | Faz o onboarding, diagnostica o momento da conta, cria o manual de identidade visual, planeja, produz, agenda, publica, coleta métricas e propõe ajustes. |
 | **Especialistas de IA (dentro do produto)** | Marketing, comunicação, planejamento, viralização, Instagram, imagem, identidade visual, **nicho** e **produto**. Veja a seção 5. |
 
@@ -248,7 +248,7 @@ O plano é um calendário. Cada item tem:
 - se tem isca
 - se precisa de **ação manual** (por exemplo, enquete em Stories)
 
-O gestor aprova o plano como um todo e pode editar itens individuais.
+O plano é **semanal** (segunda a domingo) e o gestor aprova a semana inteira de uma vez (seção 6.7).
 
 ### 6.6 Produção
 
@@ -262,7 +262,7 @@ O gestor aprova o plano como um todo e pode editar itens individuais.
 3. **Arte:** o especialista de imagem escolhe o template e preenche os campos. O renderizador (Satori) aplica texto, logo e cores do manual e gera o JPEG nos tamanhos certos:
    - Feed e carrossel: 1080×1350 (4:5)
    - Stories e Reels: 1080×1920 (9:16)
-3. **Validações automáticas** antes de liberar para aprovação:
+4. **Validações automáticas** antes de liberar para aprovação:
    - proporção, resolução, JPEG, sRGB e até 8 MB
    - contraste de texto pelo menos 4.5:1 (WCAG)
    - fonte mínima e limite de caracteres por campo
@@ -270,7 +270,7 @@ O gestor aprova o plano como um todo e pode editar itens individuais.
    - só cores da paleta, logo com respiro e mesma proporção em todos os slides do carrossel
    - texto alternativo preenchido e licença registrada para cada ativo
    - **regras de compliance do nicho** (por exemplo, em saúde: nada de promessa de cura e registro profissional visível)
-4. **Vídeos (Reels e Stories em vídeo).** Há dois caminhos.
+5. **Vídeos (Reels e Stories em vídeo).** Há dois caminhos.
 
    **a) Upload de vídeo pelo gestor**
    - O arquivo vai direto para o R2.
@@ -288,25 +288,52 @@ O gestor aprova o plano como um todo e pode editar itens individuais.
    3. O **serviço de render** monta o vídeo com o template da marca: texto animado dentro da área segura, logo, **legendas na tela**, transições e trilha.
    4. A trilha precisa ser **licenciada ou sem direitos**, porque a música da biblioteca do Instagram não está disponível pela API. O sistema mantém uma biblioteca de trilhas com o registro da licença de cada uma.
    5. **Narração por voz sintética** fica como opção futura.
-   6. O vídeo gerado passa pela mesma prévia e aprovação que as artes.
+   6. O vídeo gerado entra no pacote semanal e é aprovado junto com a semana.
    7. O custo estimado aparece **antes** de gerar, porque vídeo de IA é cobrado por segundo.
 
    Formato mais barato para começar: **carrossel animado → Reels**. Ele reaproveita artes já aprovadas e não exige vídeo de IA.
 
-### 6.7 Prévia e aprovação (piloto → automático)
+### 6.7 Ciclo semanal: planejamento no domingo e aprovação da semana
 
-1. **Prévia inicial:** antes da primeira publicação, o sistema mostra um **lote piloto** (por exemplo, a primeira semana):
-   - simulação do feed e do grid do perfil
-   - cada arte com a legenda
-   - de 1 a 3 variações de estilo, para o gestor escolher a direção
-2. O gestor **aprova, edita ou pede refação**, com comentário por post. O feedback vira ajuste no manual ou nas preferências.
-3. **Modo automático:** depois da aprovação do piloto, o gestor pode ligar o "piloto automático". O sistema então cria e publica sozinho, **dentro da estratégia e do manual aprovados**.
-4. **O automático pausa sozinho e volta a pedir aprovação quando:**
-   - a estratégia muda (por uma proposta aprovada da seção 6.9)
-   - o manual muda de versão
-   - entra um tema sensível ou uma oferta nova
-   - uma validação falha
-5. O gestor pode **pausar a qualquer momento**. Também pode configurar uma **janela de veto**, por exemplo: posts ficam visíveis 24h antes de publicar.
+**Regra do gestor:** o planejamento chega **todo domingo de manhã**. Depois que o gestor aprova a semana, o sistema **cria e publica tudo sozinho**, sem pedir aprovação post a post.
+
+**Linha do tempo de cada semana (por conta):**
+
+| Quando | O que acontece |
+|---|---|
+| **Sábado, a partir das 20h** | Job semanal: coleta as métricas da semana que termina, gera o relatório e as propostas de ajuste (6.9), monta o plano da próxima semana e **já produz tudo**: artes, legendas, vídeos do estúdio e capas. |
+| **Domingo, 8h** (horário configurável) | O sistema **envia o pacote da semana** por e-mail, com link para o painel, e o pacote aparece no painel. |
+| **Domingo, durante o dia** | O gestor revisa. Pode aprovar a semana inteira com **um clique**, ou editar, trocar e remover posts e pedir refação com comentário antes de aprovar. As propostas de ajuste são aprovadas na mesma tela. |
+| **Depois da aprovação** | Todos os posts da semana ficam `agendado` e o sistema publica sozinho nos horários definidos. |
+
+**O pacote de domingo mostra:**
+- resumo da semana anterior: alcance, melhores posts e o que funcionou;
+- propostas de ajuste estratégico (6.9);
+- simulação do feed e do grid com os posts novos;
+- calendário da semana, com cada post (formato, arte ou vídeo, legenda e horário);
+- tarefas manuais da semana (por exemplo, enquete em Stories);
+- custo de IA previsto para a semana e saldo do orçamento do mês (6.10).
+
+**Se o gestor não aprovar a tempo:**
+- **Nada é publicado sem aprovação.**
+- Lembretes vão no domingo às 18h e na segunda às 8h.
+- Se a aprovação chegar depois do horário de algum post, o sistema propõe reencaixar esses posts nos dias restantes da semana.
+
+**Primeira semana de cada conta:**
+- O primeiro pacote é gerado **logo após o onboarding**, sem esperar o domingo.
+- Ele traz de 1 a 3 variações de estilo, para o gestor escolher a direção visual.
+- A partir daí, o ciclo segue todo domingo.
+
+**Segurança durante a semana**, já que não há aprovação post a post:
+- Um post que falhar numa validação na hora de publicar é **retido**, e o gestor é avisado. O resto da semana segue normalmente.
+- Se o token for revogado ou a conta tiver problema, a conta inteira pausa e o gestor é avisado.
+- Botão **"Pausar conta"** e botão **"Pausar tudo"** sempre visíveis no painel.
+- O gestor pode editar ou remover um post já agendado a qualquer momento antes de ele sair.
+- Mudanças de estratégia ou de manual **só valem a partir do próximo pacote de domingo**. Nunca mudam uma semana já aprovada.
+
+**Configurável por conta** (tela de Configurações): dia e hora de envio do pacote (padrão: domingo, 8h, fuso America/Sao_Paulo), horários de lembrete e e-mail de destino.
+
+**Observação técnica:** os crons do Netlify rodam em UTC. Domingo às 8h em Brasília corresponde às 11h UTC. O sistema guarda o fuso de cada conta e converte os horários.
 
 ### 6.8 Publicação
 
@@ -346,6 +373,40 @@ Se a publicação falhar, o sistema avisa o gestor. Se o token for revogado, pau
 
 ---
 
+### 6.10 Orçamento e controle de custos
+
+**Regra do gestor:** o orçamento começa em **R$ 1.000 por mês** e pode ser aumentado ou diminuído numa **tela de configuração**.
+
+**Tela "Configurações → Orçamento":**
+- **Teto mensal** em reais, com padrão de R$ 1.000 e campo editável.
+- **Divisão opcional por conta.** Exemplo: Conta A R$ 400, Conta B R$ 300, reserva R$ 300. Sem divisão, todas as contas usam o teto geral.
+- **Cotação do dólar**, porque as APIs cobram em dólar. Atualizada automaticamente, com opção de valor manual.
+- **Tabela de preços** de cada modelo e serviço (Claude, Gemini imagem, Veo, render de vídeo), editável quando os provedores mudarem os preços.
+- **Alertas** por e-mail e no painel quando o gasto do mês atingir 50%, 80% e 100%.
+- **O que fazer ao atingir 100%** (configurável):
+  - padrão: **parar de gerar conteúdo novo com IA**, mas **continuar publicando** o que já foi produzido e aprovado;
+  - alternativa: priorizar formatos baratos, como carrossel animado em vez de clipes de vídeo de IA.
+
+**Como o custo é medido:**
+- Cada chamada de IA registra o uso real em `GeracaoIA`: tokens da Claude, imagens geradas e segundos de vídeo.
+- Esse uso é multiplicado pela tabela de preços e convertido para reais.
+- O painel mostra:
+  - gasto do mês, total e por conta;
+  - gasto por tipo: texto, imagem e vídeo;
+  - projeção até o fim do mês.
+
+**Antes de gerar:**
+- O job de sábado calcula o **custo previsto do pacote**.
+- Se o pacote ultrapassar o saldo, o sistema troca automaticamente os formatos mais caros (vídeo de IA → carrossel animado) e avisa no pacote de domingo.
+
+**Também nos provedores:**
+- Configure limites de gasto mensais nos painéis da Anthropic e do Google, em dólar, um pouco acima do teto do sistema.
+- Isso serve como segunda proteção.
+
+**Fora do teto:** os custos fixos de infraestrutura (Netlify, Neon, R2, serviço de render) **não** entram nesse teto. Eles podem ser cadastrados na mesma tela, só para acompanhamento.
+
+**Referência de consumo** (a validar com o uso real): texto e imagem custam pouco por post. **Vídeo gerado por IA é o que mais pesa**, porque é cobrado por segundo. Por isso, o sistema mostra o custo previsto antes de produzir.
+
 ## 7. Modelo de dados (principais entidades)
 
 | Entidade | Campos principais |
@@ -367,7 +428,9 @@ Se a publicação falhar, o sistema avisa o gestor. Se o token for revogado, pau
 | `Aprovacao` | Alvo, decisão, comentário, autor, data |
 | `Metrica` | Post ou conta, métrica, valor, coletada_em |
 | `PropostaAjuste` | Diagnóstico, proposta, impacto esperado, status |
-| `GeracaoIA` | Especialista, versão do prompt, entrada, saída, custo (para auditoria) |
+| `GeracaoIA` | Conta, especialista, provedor e modelo, versão do prompt, entrada, saída, uso (tokens, imagens, segundos), custo em USD e BRL |
+| `CicloSemanal` | Conta, semana, status (gerando → enviado → aprovado / expirado), enviado_em, aprovado_em, custo previsto |
+| `Configuracao` | Teto mensal (BRL), divisão por conta, cotação, tabela de preços, ação ao atingir 100%, dia e hora do pacote, fuso, e-mail de notificação |
 
 ---
 
@@ -377,18 +440,18 @@ Cada fase é desenvolvida com o comando `/feature`, uma feature por vez, sempre 
 
 | Fase | Entrega | Critério de pronto |
 |---|---|---|
-| **0. Fundação** | Projeto Next.js + TypeScript publicado no Netlify, Neon + Prisma, login do gestor, tabela de jobs com Scheduled e Background Functions, R2 com upload pré-assinado, CI com lint e testes. **Em paralelo:** criar o app na Meta e levar as contas para Business/Creator. | Gestor faz login no painel publicado; um job de teste roda pelo agendador; o CI fica verde. |
+| **0. Fundação** | Projeto Next.js + TypeScript publicado no Netlify, Neon + Prisma, login do gestor, tabela de jobs com Scheduled e Background Functions, R2 com upload pré-assinado, envio de e-mail, **registro de custo de IA e tela de orçamento (teto de R$ 1.000)**, CI com lint e testes. **Em paralelo:** criar o app na Meta e levar as contas para Business/Creator. | Gestor faz login no painel publicado; um job de teste roda pelo agendador; o CI fica verde. |
 | **1. Contas, onboarding e briefing** | Cadastro de **várias contas** (cada uma com sua marca), seletor de conta, briefing guiado (12 perguntas + isca), upload de referências, geração da ficha do produto pelo especialista de produto. | O gestor cria 2 contas, completa o briefing e aprova a ficha do produto. |
 | **2. Identidade visual** | Análise das referências por visão, especialista de identidade visual, manual em JSON e versão legível, editor e aprovação, versionamento. | Manual aprovado e salvo com versão. |
 | **3. Estratégia e plano** | Diagnóstico do momento, playbooks de nicho, matriz da seção 6.2, encaixe da isca, geração do calendário com formatos, tela de calendário. | Plano de 4 semanas gerado e editável. |
 | **4. Produção** | Templates em JSX/Satori (6 iniciais), renderizador, biblioteca de mídia, **Gemini para gerar e editar imagens** a partir de referências, legendas, ganchos e alt text, validações automáticas e de compliance. | Cada item do plano tem arte e legenda válidas. |
-| **5. Prévia e aprovação** | Simulação do feed e do grid, lote piloto, aprovação, edição e refação por post, feedback que ajusta o manual e as preferências. | Gestor aprova o piloto pela interface. |
+| **5. Ciclo semanal e aprovação** | Job de sábado que produz a semana, envio do pacote no domingo de manhã (e-mail + painel), simulação do feed e do grid, aprovação da semana com um clique, edição e refação por post, lembretes, primeiro pacote logo após o onboarding, feedback que ajusta o manual e as preferências. | O pacote chega no domingo às 8h e o gestor aprova a semana inteira pela interface. |
 | **6. Conexão e publicação** ⚠️ | Passo a passo de tester + OAuth por conta, armazenamento e renovação do token, publicação de imagem, carrossel e Stories, **upload e publicação de vídeos (Reels)** com capa da marca, controle de limite por conta, idempotência, tarefas manuais. **Antes de começar:** reconfirmar todos os itens ⚠️ com o `especialista-instagram`. | Post e vídeo aprovados são publicados sozinhos no horário, em mais de uma conta; falhas avisam o gestor. |
 | **7. Análise e propostas** | Coleta de insights, painel de KPIs por conta e consolidado, regras de ajuste, relatório semanal, propostas com aprovação que geram nova versão da estratégia. | Relatório semanal com propostas aprováveis. |
 | **8. Estúdio de vídeos curtos** | Roteiro em cenas, carrossel animado → Reels, clipes com Veo, montagem por templates no serviço de render, legendas na tela, biblioteca de trilhas licenciadas, estimativa de custo antes de gerar. | Reels de 15s gerado, aprovado e publicado com a identidade da marca. |
-| **9. Piloto automático e expansão** | Modo automático com pausas de segurança, mais templates, palavra-chave → DM automática (novas permissões), narração por voz. | Conta rodando 4 semanas no automático com o gestor só aprovando propostas. |
+| **9. Expansão** | Mais templates, palavra-chave → DM automática (novas permissões), narração por voz, ajustes finos do orçamento por formato. | Contas rodando 4 semanas com o gestor só aprovando o pacote de domingo. |
 
-**MVP = fases 0 a 6:** várias contas próprias; post, carrossel e Stories com imagem e com IA de imagem; upload e publicação de vídeos; aprovação da prévia. Sem App Review, porque todas as contas são do gestor.
+**MVP = fases 0 a 6:** várias contas próprias; post, carrossel e Stories com imagem e com IA de imagem; upload e publicação de vídeos; pacote semanal no domingo com aprovação da semana e publicação automática; orçamento com teto configurável. Sem App Review, porque todas as contas são do gestor.
 
 ---
 
@@ -417,13 +480,12 @@ Cada fase é desenvolvida com o comando `/feature`, uma feature por vez, sempre 
 3. Hospedagem no **Netlify**, com Neon e Cloudflare R2.
 4. **IA de imagem no MVP**, com a Gemini API.
 5. **Vídeos:** upload no MVP (fase 6) e estúdio de vídeos curtos na fase 8.
+6. **Orçamento:** R$ 1.000 por mês para IA, ajustável na tela de configuração (6.10).
+7. **Aprovação semanal:** pacote no domingo de manhã. Aprovada a semana, o sistema roda sozinho sem aprovação post a post (6.7).
+8. **Serviço de render de vídeo:** escolher na fase 8.
 
-**Pendentes:**
-1. **Orçamento mensal** de IA e infraestrutura, para definir limites de gasto.
-2. **Janela de veto** no modo automático: quantas horas antes de publicar?
-3. **Serviço de render de vídeo** (Shotstack, Creatomate ou outro), a decidir na fase 8 comparando preço e templates.
-
----
+**Pendente (sem bloquear o início):**
+1. Canal de envio do pacote de domingo. O padrão é e-mail mais painel; WhatsApp pode entrar depois.
 
 ## 11. Próximos passos
 
