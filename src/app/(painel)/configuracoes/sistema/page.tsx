@@ -1,6 +1,7 @@
 import { obterDb } from "@/lib/db";
 import { formatarDataHora } from "@/lib/datas";
 import { BotaoPing, BotaoTentarDeNovo } from "./botoes";
+import { UploadTeste } from "./upload-teste";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,14 @@ export default async function PaginaSistema() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="text-lg font-medium">Teste de upload (R2)</h2>
+        <p className="text-sm text-slate-600">
+          Envia uma imagem direto do navegador para o Cloudflare R2 e confere o arquivo.
+        </p>
+        <UploadTeste />
       </section>
     </div>
   );

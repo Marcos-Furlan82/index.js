@@ -39,3 +39,28 @@ describe("ações da tela Sistema", () => {
     });
   });
 });
+
+describe("ações de upload da tela Sistema", () => {
+  it("sem sessão redirecionam para o login", async () => {
+    const { solicitarUploadTeste, confirmarUploadTeste } = await import(
+      "@/app/(painel)/configuracoes/sistema/actions"
+    );
+    expect(
+      await destinoDoRedirect(() =>
+        solicitarUploadTeste({ tipoMime: "image/png", tamanhoBytes: 10, nomeOriginal: "a.png" }),
+      ),
+    ).toBe("/login");
+    expect(await destinoDoRedirect(() => confirmarUploadTeste("6f1c2a8e-1111-4222-8333-444455556666"))).toBe(
+      "/login",
+    );
+    expect(await obterDb().midia.count()).toBe(0);
+  });
+
+  it("com sessão, só aceita imagens", async () => {
+    const { solicitarUploadTeste } = await import("@/app/(painel)/configuracoes/sistema/actions");
+    await entrarComoGestor();
+    const r = await solicitarUploadTeste({ tipoMime: "video/mp4", tamanhoBytes: 10, nomeOriginal: "a.mp4" });
+    expect(r.ok).toBe(false);
+    expect(await obterDb().midia.count()).toBe(0);
+  });
+});
