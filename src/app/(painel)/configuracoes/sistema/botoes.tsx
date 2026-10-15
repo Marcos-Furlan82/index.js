@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { enfileirarPing, tentarDeNovo, type EstadoAcao } from "./actions";
+import { enfileirarPing, enviarEmailTeste, tentarDeNovo, type EstadoAcao } from "./actions";
 
 const inicial: EstadoAcao = {};
 
@@ -30,6 +30,18 @@ export function BotaoTentarDeNovo({ jobId }: { jobId: string }) {
       <input type="hidden" name="jobId" value={jobId} />
       <button type="submit" disabled={pendente} className="text-sm text-blue-700 underline disabled:opacity-60">
         Tentar de novo
+      </button>
+      <Mensagem estado={estado} />
+    </form>
+  );
+}
+
+export function BotaoEmailTeste() {
+  const [estado, acao, pendente] = useActionState(async () => enviarEmailTeste(), inicial);
+  return (
+    <form action={acao} className="flex items-center gap-3">
+      <button type="submit" disabled={pendente} className="rounded bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-60">
+        Enviar e-mail de teste
       </button>
       <Mensagem estado={estado} />
     </form>

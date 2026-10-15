@@ -1,5 +1,6 @@
 import { TIMEOUT_MAXIMO_MS, TIMEOUT_PADRAO_MS } from "./limites";
 import type { DefinicaoJob, Registro } from "./tipos";
+import { enviarEmail } from "./handlers/enviar-email";
 import { ping } from "./handlers/ping";
 
 export function timeoutDe(def: Pick<DefinicaoJob, "timeoutMs">): number {
@@ -26,6 +27,7 @@ export function maiorTimeout(registro: Registro): number {
 
 export const REGISTRO: Registro = validarRegistro({
   ping,
+  "enviar-email": enviarEmail,
 });
 
-export type TipoJob = "ping";
+export type TipoJob = "ping" | "enviar-email";

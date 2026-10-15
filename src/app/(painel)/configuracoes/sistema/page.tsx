@@ -1,6 +1,6 @@
 import { obterDb } from "@/lib/db";
 import { formatarDataHora } from "@/lib/datas";
-import { BotaoPing, BotaoTentarDeNovo } from "./botoes";
+import { BotaoEmailTeste, BotaoPing, BotaoTentarDeNovo } from "./botoes";
 import { UploadTeste } from "./upload-teste";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +64,14 @@ export default async function PaginaSistema() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="text-lg font-medium">E-mail</h2>
+        <p className="text-sm text-slate-600">
+          Envia um e-mail de teste para o seu endereço, pela fila de jobs.
+        </p>
+        <BotaoEmailTeste />
       </section>
 
       <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">

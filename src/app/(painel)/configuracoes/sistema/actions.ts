@@ -48,3 +48,17 @@ export async function confirmarUploadTeste(midiaId: string) {
   revalidatePath(CAMINHO);
   return resultado;
 }
+
+export async function enviarEmailTeste(): Promise<EstadoAcao> {
+  const sessao = await exigirSessao();
+  await enfileirarJob({
+    tipo: "enviar-email",
+    payload: {
+      para: sessao.usuario.email,
+      modelo: "teste",
+      dados: { solicitadoPor: sessao.usuario.nome },
+    },
+  });
+  revalidatePath(CAMINHO);
+  return { ok: `E-mail de teste enfileirado para ${sessao.usuario.email}.` };
+}
