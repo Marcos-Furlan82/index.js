@@ -1,6 +1,6 @@
 # Plano de construção: planejador e publicador de posts no Instagram
 
-> Versão 1. Consolidado a partir das consultas aos agentes `especialista-instagram`, `especialista-imagem` e `especialista-marketing`.
+> Versão 2. Consolidado a partir das consultas aos agentes `especialista-instagram`, `especialista-imagem` e `especialista-marketing`, com as decisões do gestor (seção 10).
 > Itens marcados com ⚠️ precisam ser reconfirmados na documentação oficial da Meta antes de virar código.
 
 ---
@@ -39,9 +39,16 @@ O gestor **não deve passar login e senha**. Automatizar o login com senha viola
 4. O gestor clica em "Conectar Instagram" no sistema e autoriza.
 5. O sistema troca o token curto (cerca de 1h) por um **token longo (60 dias)**, guarda **criptografado** e **renova automaticamente** antes de vencer.
 
-**Modo de acesso:**
-- Enquanto as contas forem do próprio gestor, o **Standard Access** basta. O gestor só precisa estar cadastrado como tester ou admin do app, sem App Review.
-- Para atender **contas de terceiros** (vender o sistema como SaaS), é preciso **Advanced Access**, o que exige **App Review e Business Verification**. Isso leva semanas, então convém começar cedo.
+**Modo de acesso (decidido: uso próprio, com várias contas):**
+- O sistema é só do gestor, então o **Standard Access** basta, sem App Review.
+- **Cada conta de Instagram** precisa ser adicionada como **tester do Instagram** no app da Meta, e o convite precisa ser aceito dentro da própria conta (Configurações → Apps e sites). Só depois disso a conta pode ser conectada via OAuth.
+- O sistema deve ter um passo a passo guiado para isso, na tela "Adicionar conta".
+- ⚠️ Confirmar se existe um limite de testers por app em modo de desenvolvimento.
+- Se um dia o sistema for oferecido a terceiros, aí será preciso **Advanced Access**, com App Review e Business Verification.
+
+**Várias contas:**
+- Cada conta tem sua própria marca, briefing, produtos, manual de identidade visual, estratégia, token e limite de publicação.
+- O painel tem um seletor de conta e uma visão geral com o calendário de todas as contas.
 
 **Limitações da API que o produto precisa tratar:**
 
@@ -59,47 +66,78 @@ O gestor **não deve passar login e senha**. Automatizar o login com senha viola
 
 ---
 
-## 4. Arquitetura proposta
+## 4. Arquitetura (hospedagem no Netlify)
 
 ```
-┌─────────────────────────────── Painel web (gestor) ──────────────────────────────┐
-│ Onboarding · Manual de identidade · Plano/Calendário · Prévia e aprovação ·     │
-│ Tarefas manuais · Relatórios · Propostas de ajuste                               │
+┌──────────────────────────── Painel web (Next.js no Netlify) ─────────────────────┐
+│ Contas · Onboarding · Manual de identidade · Plano/Calendário · Prévia e        │
+│ aprovação · Estúdio de vídeo · Tarefas manuais · Relatórios · Propostas         │
 └──────────────────────────────────────┬───────────────────────────────────────────┘
                                        │
 ┌──────────────────────────────────────▼───────────────────────────────────────────┐
-│ API (backend)                                                                    │
-│  ├─ Módulo Marca/Produto/Briefing        ├─ Módulo Estratégia e Plano             │
-│  ├─ Módulo Identidade Visual             ├─ Módulo Produção (legenda + arte)      │
-│  ├─ Módulo Aprovação                     ├─ Módulo Análise e Propostas            │
-│  └─ Orquestrador de especialistas (Claude API)                                   │
-└───────┬──────────────────┬──────────────────────┬──────────────────┬─────────────┘
-        │                  │                      │                  │
-  ┌─────▼─────┐   ┌────────▼────────┐   ┌─────────▼────────┐  ┌──────▼──────────┐
-  │ Banco de  │   │ Fila e agendador│   │ Renderizador de  │  │ Armazenamento de│
-  │ dados     │   │ (publicação,    │   │ artes (HTML/CSS  │  │ mídia (URL      │
-  │           │   │ métricas, token)│   │ → PNG/JPEG)      │  │ pública)        │
-  └───────────┘   └────────┬────────┘   └──────────────────┘  └─────────────────┘
-                           │
-                  ┌────────▼────────┐
-                  │ Instagram API   │
-                  │ (Meta)          │
-                  └─────────────────┘
+│ API (rotas Next.js = funções síncronas, até ~30s)                                │
+│  Marca/Produto/Briefing · Identidade Visual · Estratégia e Plano · Produção ·    │
+│  Aprovação · Análise e Propostas · Orquestrador de especialistas (Claude API)    │
+└──────┬─────────────────────────────┬─────────────────────────────────────────────┘
+       │ grava jobs                  │ upload direto do navegador (URL pré-assinada)
+┌──────▼──────────────┐     ┌────────▼──────────────────┐
+│ PostgreSQL (Neon)   │     │ Cloudflare R2             │
+│ dados + tabela jobs │     │ mídia com URL pública     │
+└──────▲──────────────┘     └────────▲──────────────────┘
+       │                             │
+┌──────┴─────────────────────────────┴─────────────────────────────────────────────┐
+│ Trabalho em segundo plano (Netlify)                                              │
+│  • Scheduled Function (cron a cada 1–5 min): despacha jobs vencidos              │
+│  • Background Functions (até 15 min): gerar plano, gerar imagens, publicar,      │
+│    acompanhar status do container, coletar insights, renovar tokens              │
+└──────┬───────────────┬──────────────────┬──────────────────┬─────────────────────┘
+       │               │                  │                  │
+ ┌─────▼──────┐ ┌──────▼───────┐ ┌────────▼────────┐ ┌───────▼──────────────┐
+ │ Claude API │ │ Gemini API   │ │ Render de vídeo │ │ Instagram API (Meta) │
+ │ texto,     │ │ imagens e    │ │ (serviço        │ │ publicação e métricas│
+ │ estratégia,│ │ clipes de    │ │ externo)        │ │                      │
+ │ visão      │ │ vídeo        │ │                 │ │                      │
+ └────────────┘ └──────────────┘ └─────────────────┘ └──────────────────────┘
 ```
 
-### Stack sugerida (a confirmar com o gestor)
+### O que o Netlify muda no plano
 
-| Camada | Sugestão | Por quê |
+| Limite do Netlify | Consequência no projeto |
+|---|---|
+| Funções síncronas têm até cerca de 30s e corpo de até 6 MB ⚠️ | Tarefas longas (gerar plano, imagens, vídeo, publicar) viram **jobs** e rodam em **Background Functions** (até 15 min). O painel acompanha o status. |
+| Não existe processo rodando o tempo todo (sem worker fixo) | No lugar do pg-boss entra uma **tabela `jobs` no Postgres** (com `FOR UPDATE SKIP LOCKED`). Uma **Scheduled Function** roda a cada 1 a 5 minutos e dispara os jobs vencidos. ⚠️ Confirmar o intervalo mínimo de cron no plano do Netlify. |
+| Upload de vídeo de até 300 MB não cabe numa função | O navegador envia o arquivo **direto para o R2** com URL pré-assinada. A função só registra o arquivo. |
+| Chromium/Playwright é pesado demais para funções | As artes são renderizadas com **Satori + resvg** (templates em JSX → PNG → JPEG com `sharp`). É leve e roda em função. |
+| Renderizar vídeo (ffmpeg/Remotion) não é viável em função | A montagem dos vídeos fica num **serviço externo de renderização por templates** (seção 6.6). |
+| Background Functions podem não estar disponíveis em plano de teste ⚠️ | Conferir o plano do Netlify antes da fase 6. |
+
+### Stack definida
+
+| Camada | Escolha | Por quê |
 |---|---|---|
-| Linguagem | **TypeScript (Node.js)** | Um só idioma no front e no back. O repositório já se chama `index.js`. |
-| Web + API | Next.js | Painel e API no mesmo projeto, o que é simples para um MVP |
-| Banco | PostgreSQL + Prisma | Relacional, com migrações versionadas |
-| Fila/agendador | pg-boss (usa o próprio Postgres) | Evita um Redis no MVP. Dá para trocar por BullMQ depois. |
-| Mídia | Armazenamento compatível com S3 (ex.: Cloudflare R2) | A Meta precisa baixar a mídia de uma URL pública |
-| Artes | Templates HTML/CSS renderizados com Playwright → JPEG | Marca consistente, texto perfeito, resultado repetível |
-| IA de texto e visão | **Claude API** (`@anthropic-ai/sdk`), modelo `claude-opus-5-5` | Planejamento, legendas e leitura das artes de referência (visão), com saídas estruturadas em JSON |
-| IA de imagem (opcional) | Provedor a definir | Só fundos e ilustrações **sem texto e sem logo** |
-| Segredos | Tokens criptografados no banco, com chave em variável de ambiente | Tokens da Meta nunca aparecem em logs |
+| Linguagem | **TypeScript (Node.js)** | Decidido pelo gestor |
+| Web + API | **Next.js** no **Netlify** | Decidido pelo gestor |
+| Banco | **PostgreSQL** no **Neon** (é o que o Netlify DB usa), com Prisma | Serverless, com integração nativa ao Netlify |
+| Jobs | Tabela `jobs` no Postgres + Netlify Scheduled e Background Functions | Funciona sem worker fixo |
+| Mídia | **Cloudflare R2** (bucket público para a Meta baixar) | Sem custo de saída de dados e com upload direto do navegador |
+| Artes | **Satori + resvg + sharp** | Templates da marca renderizados dentro de funções |
+| IA de texto e visão | **Claude API** (`@anthropic-ai/sdk`), modelo `claude-opus-5-5` | Estratégia, legendas, roteiros e análise das referências por visão, com saídas em JSON validado |
+| IA de imagem | **Gemini API** (modelos de imagem do Google) ⚠️ confirmar o modelo atual | Bom em manter consistência a partir de várias imagens de referência (fotos reais do produto, artes do gestor) |
+| IA de vídeo (clipes) | **Gemini API** (Veo), com a mesma chave ⚠️ confirmar preço por segundo | Clipes curtos de apoio, de 4 a 8s, para os vídeos |
+| Montagem de vídeo | Serviço de render por templates (ex.: Shotstack ou Creatomate) ⚠️ escolher na fase 8 | Monta o Reels com a marca: cenas, texto animado, logo, legendas e trilha |
+| Segredos | Variáveis de ambiente no Netlify; tokens da Meta criptografados no banco | Nada de chave no código ou nos logs |
+
+### Chaves de API necessárias
+
+| Chave | Para quê | Onde obter | Quando |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | Todos os especialistas: estratégia, plano, legendas, roteiros, análise das referências, relatórios | console.anthropic.com | Fase 1 |
+| `GEMINI_API_KEY` | Geração e edição de imagens e clipes de vídeo | Google AI Studio (aistudio.google.com) | Fase 4 |
+| `META_APP_ID` / `META_APP_SECRET` | Conectar as contas de Instagram (OAuth) | developers.facebook.com | Fase 6 |
+| Chave do serviço de render de vídeo | Montar os Reels | Site do provedor escolhido | Fase 8 |
+| `DATABASE_URL`, chaves do R2, `ENCRYPTION_KEY` | Infraestrutura | Neon, Cloudflare e geração local | Fase 0 |
+
+Configure limites de gasto nos painéis da Anthropic e do Google desde o início.
 
 ---
 
@@ -215,7 +253,13 @@ O gestor aprova o plano como um todo e pode editar itens individuais.
 ### 6.6 Produção
 
 1. **Legenda:** comunicação + nicho + produto + gancho da viralização.
-2. **Arte:** o especialista de imagem escolhe o template e preenche os campos. O renderizador gera o JPEG nos tamanhos certos:
+2. **Imagem de base**, por ordem de preferência:
+   1. **foto real** enviada pelo gestor (produto, equipe, espaço);
+   2. **foto real editada pela IA de imagem**, por exemplo o produto colocado num cenário, usando as fotos reais como referência;
+   3. **imagem gerada pela IA** (fundo, cenário, ilustração).
+
+   Em todos os casos, a IA **nunca gera texto, logo, pessoas reais ou rostos de "clientes"**.
+3. **Arte:** o especialista de imagem escolhe o template e preenche os campos. O renderizador (Satori) aplica texto, logo e cores do manual e gera o JPEG nos tamanhos certos:
    - Feed e carrossel: 1080×1350 (4:5)
    - Stories e Reels: 1080×1920 (9:16)
 3. **Validações automáticas** antes de liberar para aprovação:
@@ -226,7 +270,28 @@ O gestor aprova o plano como um todo e pode editar itens individuais.
    - só cores da paleta, logo com respiro e mesma proporção em todos os slides do carrossel
    - texto alternativo preenchido e licença registrada para cada ativo
    - **regras de compliance do nicho** (por exemplo, em saúde: nada de promessa de cura e registro profissional visível)
-4. **Reels (vídeo):** é a produção mais complexa. No MVP, o gestor envia o vídeo e o sistema cuida da capa, da legenda e da publicação. A geração automática de vídeo fica para depois (fase 8).
+4. **Vídeos (Reels e Stories em vídeo).** Há dois caminhos.
+
+   **a) Upload de vídeo pelo gestor**
+   - O arquivo vai direto para o R2.
+   - O sistema valida formato, duração, tamanho e proporção 9:16 ⚠️.
+   - Depois cria a capa no template da marca, a legenda e publica.
+   - Esse caminho entra no MVP (fase 6).
+
+   **b) Estúdio de vídeos curtos (criação automática, de 7 a 30s)**
+   1. O especialista de viralização e o de comunicação escrevem o **roteiro em cenas**: gancho nos 2 primeiros segundos, desenvolvimento e CTA.
+   2. Cada cena usa um destes materiais:
+      - foto ou vídeo do gestor;
+      - imagem gerada ou editada pela Gemini;
+      - **clipe curto gerado pela Veo**, de 4 a 8s, só para cenas sem texto, sem logo e sem pessoas reais;
+      - **slide animado** a partir de um carrossel já aprovado.
+   3. O **serviço de render** monta o vídeo com o template da marca: texto animado dentro da área segura, logo, **legendas na tela**, transições e trilha.
+   4. A trilha precisa ser **licenciada ou sem direitos**, porque a música da biblioteca do Instagram não está disponível pela API. O sistema mantém uma biblioteca de trilhas com o registro da licença de cada uma.
+   5. **Narração por voz sintética** fica como opção futura.
+   6. O vídeo gerado passa pela mesma prévia e aprovação que as artes.
+   7. O custo estimado aparece **antes** de gerar, porque vídeo de IA é cobrado por segundo.
+
+   Formato mais barato para começar: **carrossel animado → Reels**. Ele reaproveita artes já aprovadas e não exige vídeo de IA.
 
 ### 6.7 Prévia e aprovação (piloto → automático)
 
@@ -286,15 +351,19 @@ Se a publicação falhar, o sistema avisa o gestor. Se o token for revogado, pau
 | Entidade | Campos principais |
 |---|---|
 | `Workspace` | Gestor e usuários |
-| `ContaInstagram` | ig_user_id, token (criptografado), expiração, scopes concedidos, status |
-| `Marca` | Nome, tom de voz, palavras proibidas |
+| `ContaInstagram` | ig_user_id, @usuário, token (criptografado), expiração, scopes concedidos, status de tester, status |
+| `Marca` | 1 por conta: nome, tom de voz, palavras proibidas |
 | `ManualIdentidade` | Versão, JSON, versão legível, aprovado_em |
 | `Referencia` | Arquivo, análise extraída |
 | `Produto` | Ficha, nicho, provas, restrições |
 | `Isca` | Descrição, formato, entrega, pronta? |
 | `Estrategia` | Momento, objetivo, mix, pilares, versão, aprovada_em |
 | `Plano` | Período, estratégia, status |
-| `Post` | Formato, data/hora, pilar, gancho, legenda, alt_text, template, campos, mídias, status, ação manual, ids da Meta |
+| `Post` | Conta, formato, data/hora, pilar, gancho, legenda, alt_text, template, campos, mídias, status, ação manual, ids da Meta |
+| `Midia` | Origem (upload, Gemini, Veo, render), arquivo no R2, dimensões, duração, licença, custo |
+| `RoteiroVideo` | Cenas (tipo, material, texto, duração), trilha, status do render |
+| `Trilha` | Arquivo, licença, origem |
+| `Job` | Tipo, conta, payload, executar_em, tentativas, status, erro, chave de idempotência |
 | `Aprovacao` | Alvo, decisão, comentário, autor, data |
 | `Metrica` | Post ou conta, métrica, valor, coletada_em |
 | `PropostaAjuste` | Diagnóstico, proposta, impacto esperado, status |
@@ -308,17 +377,18 @@ Cada fase é desenvolvida com o comando `/feature`, uma feature por vez, sempre 
 
 | Fase | Entrega | Critério de pronto |
 |---|---|---|
-| **0. Fundação** | Projeto TypeScript, banco, autenticação do gestor, fila, armazenamento de mídia, CI com lint e testes. **Em paralelo:** criar o app na Meta, cadastrar o gestor como tester e levar a conta para Business/Creator. | Gestor faz login no painel; o CI fica verde. |
-| **1. Onboarding e briefing** | Cadastro de marca e produto, briefing guiado (12 perguntas + isca), upload de referências, geração da ficha do produto pelo especialista de produto. | O gestor completa o briefing e aprova a ficha do produto. |
+| **0. Fundação** | Projeto Next.js + TypeScript publicado no Netlify, Neon + Prisma, login do gestor, tabela de jobs com Scheduled e Background Functions, R2 com upload pré-assinado, CI com lint e testes. **Em paralelo:** criar o app na Meta e levar as contas para Business/Creator. | Gestor faz login no painel publicado; um job de teste roda pelo agendador; o CI fica verde. |
+| **1. Contas, onboarding e briefing** | Cadastro de **várias contas** (cada uma com sua marca), seletor de conta, briefing guiado (12 perguntas + isca), upload de referências, geração da ficha do produto pelo especialista de produto. | O gestor cria 2 contas, completa o briefing e aprova a ficha do produto. |
 | **2. Identidade visual** | Análise das referências por visão, especialista de identidade visual, manual em JSON e versão legível, editor e aprovação, versionamento. | Manual aprovado e salvo com versão. |
 | **3. Estratégia e plano** | Diagnóstico do momento, playbooks de nicho, matriz da seção 6.2, encaixe da isca, geração do calendário com formatos, tela de calendário. | Plano de 4 semanas gerado e editável. |
-| **4. Produção** | Templates HTML/CSS (6 iniciais), renderizador, geração de legendas, ganchos e alt text, validações automáticas e de compliance. | Cada item do plano tem arte e legenda válidas. |
+| **4. Produção** | Templates em JSX/Satori (6 iniciais), renderizador, biblioteca de mídia, **Gemini para gerar e editar imagens** a partir de referências, legendas, ganchos e alt text, validações automáticas e de compliance. | Cada item do plano tem arte e legenda válidas. |
 | **5. Prévia e aprovação** | Simulação do feed e do grid, lote piloto, aprovação, edição e refação por post, feedback que ajusta o manual e as preferências. | Gestor aprova o piloto pela interface. |
-| **6. Conexão e publicação** ⚠️ | OAuth do Instagram, armazenamento e renovação do token, agendador, publicação de imagem, carrossel e Stories, controle de limite, idempotência, tarefas manuais. **Antes de começar:** reconfirmar todos os itens ⚠️ com o `especialista-instagram`. | Post aprovado é publicado sozinho no horário; falhas avisam o gestor. |
-| **7. Análise e propostas** | Coleta de insights, painel de KPIs, regras de ajuste, relatório semanal, propostas com aprovação que geram nova versão da estratégia. | Relatório semanal com propostas aprováveis. |
-| **8. Piloto automático e expansão** | Modo automático com pausas de segurança, publicação de Reels a partir de vídeo enviado, mais templates, IA de imagem para fundos, palavra-chave → DM automática (novas permissões), multi-conta e App Review para terceiros. | Conta rodando 4 semanas no automático com o gestor só aprovando propostas. |
+| **6. Conexão e publicação** ⚠️ | Passo a passo de tester + OAuth por conta, armazenamento e renovação do token, publicação de imagem, carrossel e Stories, **upload e publicação de vídeos (Reels)** com capa da marca, controle de limite por conta, idempotência, tarefas manuais. **Antes de começar:** reconfirmar todos os itens ⚠️ com o `especialista-instagram`. | Post e vídeo aprovados são publicados sozinhos no horário, em mais de uma conta; falhas avisam o gestor. |
+| **7. Análise e propostas** | Coleta de insights, painel de KPIs por conta e consolidado, regras de ajuste, relatório semanal, propostas com aprovação que geram nova versão da estratégia. | Relatório semanal com propostas aprováveis. |
+| **8. Estúdio de vídeos curtos** | Roteiro em cenas, carrossel animado → Reels, clipes com Veo, montagem por templates no serviço de render, legendas na tela, biblioteca de trilhas licenciadas, estimativa de custo antes de gerar. | Reels de 15s gerado, aprovado e publicado com a identidade da marca. |
+| **9. Piloto automático e expansão** | Modo automático com pausas de segurança, mais templates, palavra-chave → DM automática (novas permissões), narração por voz. | Conta rodando 4 semanas no automático com o gestor só aprovando propostas. |
 
-**MVP = fases 0 a 6:** uma conta do próprio gestor, imagem, carrossel e Stories de imagem, com aprovação da prévia. Fica de fora a App Review, porque a conta é do próprio gestor.
+**MVP = fases 0 a 6:** várias contas próprias; post, carrossel e Stories com imagem e com IA de imagem; upload e publicação de vídeos; aprovação da prévia. Sem App Review, porque todas as contas são do gestor.
 
 ---
 
@@ -333,26 +403,35 @@ Cada fase é desenvolvida com o comando `/feature`, uma feature por vez, sempre 
 | Direitos autorais | Só fontes com licença comercial, imagens próprias ou licenciadas, licença registrada por ativo, música já embutida no vídeo |
 | Compliance de nicho (saúde, terapia, finanças, cursos) | Regras configuráveis por nicho e bloqueio automático de padrões proibidos. As regras de conselhos profissionais mudam (o CFM, por exemplo, revisou a publicidade médica em 2023), então devem ser **revisadas por um humano ou profissional da área** antes de valer. |
 | Promessas enganosas | Ficha do produto com o que "pode e não pode prometer", aplicada em toda legenda; aviso de "resultados variam" em infoprodutos |
-| Custo de IA | Prompts com cache, saídas estruturadas, custo registrado por geração em `GeracaoIA` |
+| Custo de IA (principalmente vídeo, cobrado por segundo) | Prompts com cache, saídas estruturadas, custo registrado por geração, **estimativa antes de gerar vídeo**, limites de gasto nos painéis dos provedores e um teto mensal configurável no sistema |
+| Limites do Netlify (tempo, tamanho, cron) | Tarefas longas como jobs em Background Functions, upload direto para o R2, confirmar limites do plano contratado ⚠️ |
 | Conta nova sem dados de métricas | Usar metas de referência nas primeiras 4 semanas; demografia só a partir de 100 seguidores |
 
 ---
 
-## 10. Decisões pendentes do gestor
+## 10. Decisões
 
-1. **Uso:** o sistema é só para as suas contas, ou será vendido para terceiros (SaaS)? Isso define se é preciso App Review.
-2. **Stack:** confirmar TypeScript/Next.js/PostgreSQL ou indicar outra preferência.
-3. **Hospedagem:** onde o sistema vai rodar (ex.: Vercel + Neon/Supabase, Railway, VPS).
-4. **IA de imagem:** usar ou não no MVP, e qual provedor.
-5. **Orçamento mensal** de IA e infraestrutura.
-6. **Reels:** no MVP, você vai gravar e enviar os vídeos?
-7. **Janela de veto** no modo automático: quantas horas antes de publicar?
+**Tomadas:**
+1. Uso **próprio**, com **várias contas** de Instagram. Standard Access; cada conta entra como tester.
+2. Stack **TypeScript + Next.js + PostgreSQL**.
+3. Hospedagem no **Netlify**, com Neon e Cloudflare R2.
+4. **IA de imagem no MVP**, com a Gemini API.
+5. **Vídeos:** upload no MVP (fase 6) e estúdio de vídeos curtos na fase 8.
+
+**Pendentes:**
+1. **Orçamento mensal** de IA e infraestrutura, para definir limites de gasto.
+2. **Janela de veto** no modo automático: quantas horas antes de publicar?
+3. **Serviço de render de vídeo** (Shotstack, Creatomate ou outro), a decidir na fase 8 comparando preço e templates.
 
 ---
 
 ## 11. Próximos passos
 
-1. O gestor responde às decisões da seção 10.
-2. Fazer o merge do PR com os agentes e com este plano.
-3. Começar a **fase 0** com `/feature fase 0 do plano de construção (docs/plano-de-construcao.md)`.
-4. Em paralelo, o gestor cria a conta, converte para profissional, usa manualmente por 1 a 2 semanas e cria a conta de desenvolvedor na Meta.
+1. Fazer o merge do PR com os agentes e com este plano.
+2. Começar a **fase 0** com `/feature fase 0 do plano de construção (docs/plano-de-construcao.md)`.
+3. **Em paralelo, o gestor:**
+   - cria as contas e converte para profissional;
+   - usa cada conta manualmente por 1 a 2 semanas;
+   - cria a conta de desenvolvedor na Meta;
+   - cria contas no Netlify, Neon e Cloudflare;
+   - gera as chaves da Anthropic e da Gemini, com limite de gasto.
