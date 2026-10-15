@@ -4,6 +4,7 @@ import {
   CASAS,
   formatarBRL,
   formatarDecimalBR,
+  formatarPreco,
   parseValorBR,
   percentual,
 } from "./dinheiro";
@@ -51,6 +52,13 @@ describe("formatação e arredondamento", () => {
     expect(formatarBRL("1234567.891")).toBe("R$ 1.234.567,89");
     expect(formatarDecimalBR("5.4321", 4)).toBe("5,4321");
     expect(formatarDecimalBR("-12.5", 2)).toBe("-12,50");
+  });
+
+  it("formata preço unitário sem zeros sobrando", () => {
+    expect(formatarPreco("15")).toBe("15,00");
+    expect(formatarPreco("0.04")).toBe("0,04");
+    expect(formatarPreco("0.000125")).toBe("0,000125");
+    expect(formatarPreco("1.5")).toBe("1,50");
   });
 
   it("calcula percentual sem float", () => {

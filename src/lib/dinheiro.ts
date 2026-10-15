@@ -69,3 +69,8 @@ export function percentual(parte: ValorDecimal, total: ValorDecimal): Decimal {
   if (t.isZero()) return new Decimal(0);
   return dec(parte).div(t).mul(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 }
+
+/** Preço unitário (até 6 casas) sem zeros sobrando: "15,00", "0,04", "0,000125". */
+export function formatarPreco(valor: ValorDecimal): string {
+  return formatarDecimalBR(valor, CASAS.preco).replace(/(,\d{2}\d*?)0+$/, "$1");
+}
