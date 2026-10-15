@@ -16,4 +16,5 @@ Os agentes ficam em `.claude/agents/`:
 ## Regras
 
 - O contexto da marca e dos produtos fica em `docs/contexto.md`.
+- O plano de construção do sistema (arquitetura, fluxos e fases) fica em `docs/plano-de-construcao.md`. Siga-o ao desenvolver.
 - Toda integração com a API do Instagram deve passar antes pelo `especialista-instagram`.
