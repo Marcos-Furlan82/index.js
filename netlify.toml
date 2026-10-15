@@ -1,0 +1,18 @@
+# Netlify: o runtime de Next.js (OpenNext/@netlify/plugin-nextjs) é instalado
+# automaticamente ao detectar o Next. Ver README, "Pontos a confirmar no primeiro deploy".
+
+[build]
+  command = "pnpm build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Só a produção aplica migrations (sempre aditivas). Previews só fazem build.
+[context.production]
+  command = "pnpm db:migrate:deploy && pnpm build"
+
+[functions]
+  # Funções "v2" (export default + Request). O Netlify empacota com esbuild
+  # (bundler NFT do zip-it-and-ship-it); o teste de bundle reproduz esse processo.
+  directory = "netlify/functions"

@@ -1,0 +1,12 @@
+# Pacotes autorizados a rodar scripts de instalação (pnpm 10 bloqueia por padrão).
+# - @prisma/engines: baixa o schema-engine usado por "prisma migrate".
+#   Sem ele o CLI baixa sob demanda, mas no build é melhor já ter.
+# - esbuild: valida/instala o binário nativo (usado no teste de bundle das funções).
+# "prisma" (só confere a versão do Node) e "unrs-resolver" (binário opcional do
+# eslint-plugin-import) não precisam rodar.
+onlyBuiltDependencies:
+  - "@prisma/engines"
+  - esbuild
+ignoredBuiltDependencies:
+  - prisma
+  - unrs-resolver
