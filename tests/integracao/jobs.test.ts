@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { ErroPermanente } from "@/jobs/erros";
+import { ErroComEspera, ErroPermanente } from "@/jobs/erros";
 import { executarLote } from "@/jobs/executor";
 import {
   concluir,
@@ -260,5 +260,17 @@ describe("posse do job (ficha = tentativas + lockedAt)", () => {
       tentativas: 0,
       erro: null,
     });
+  });
+});
+
+describe("espera pedida pelo erro (429 com retry-after)", () => {
+  it("registrarFalha usa max(backoff, esperaMs) e mantém PENDENTE", async () => {
+    await enfileirarJob({ tipo: "ping", payload: {} });
+    const { ficha } = (await reivindicarProximo())!;
+    const antes = Date.now();
+    expect(await registrarFalha(ficha, new ErroComEspera("ia:limite_taxa", 10 * 60_000), db(), () => 0.5)).toBe("PENDENTE");
+    const job = await db().job.findUniqueOrThrow({ where: { id: ficha.id } });
+    expect(job.executarEm.getTime() - antes).toBeGreaterThanOrEqual(10 * 60_000 - 2_000);
+    expect(job.erro).toBe("ErroComEspera: ia:limite_taxa");
   });
 });

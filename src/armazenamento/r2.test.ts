@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { limparCacheEnv } from "@/lib/env";
-import { gerarUrlUpload, limparClienteR2, urlPublica } from "./r2";
+import { gerarUrlLeitura, gerarUrlUpload, limparClienteR2, urlPublica } from "./r2";
 
 beforeEach(() => {
   process.env.R2_ACCOUNT_ID = "conta123";
@@ -8,6 +8,7 @@ beforeEach(() => {
   process.env.R2_SECRET_ACCESS_KEY = "segredo-teste";
   process.env.R2_BUCKET = "midias";
   process.env.R2_PUBLIC_BASE_URL = "https://midia.exemplo.com/";
+  process.env.R2_BUCKET_PRIVADO = "referencias-privadas";
   limparCacheEnv();
   limparClienteR2();
 });
@@ -33,5 +34,19 @@ describe("R2", () => {
 
   it("monta a URL pública sem barra dupla", () => {
     expect(urlPublica("contas/geral/2026/10/a b.jpg")).toBe("https://midia.exemplo.com/contas/geral/2026/10/a%20b.jpg");
+  });
+
+  it("área privada: PUT no bucket privado e GET assinado de 5 min com download forçado", async () => {
+    const put = new URL(
+      await gerarUrlUpload({ chave: "contas/c1/referencias/x.svg", tipoMime: "image/svg+xml", tamanhoBytes: 10, area: "privada" }),
+    );
+    expect(put.pathname).toBe("/referencias-privadas/contas/c1/referencias/x.svg");
+    const get = new URL(
+      await gerarUrlLeitura("contas/c1/referencias/x.svg", { nomeDownload: "logo final.svg", tipoMime: "image/svg+xml" }),
+    );
+    expect(get.pathname).toBe("/referencias-privadas/contas/c1/referencias/x.svg");
+    expect(get.searchParams.get("X-Amz-Expires")).toBe("300");
+    expect(get.searchParams.get("response-content-disposition")).toBe('attachment; filename="logo_final.svg"');
+    expect(get.searchParams.get("response-content-type")).toBe("image/svg+xml");
   });
 });

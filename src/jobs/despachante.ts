@@ -1,5 +1,6 @@
 import { obterDb, type ClienteDb } from "@/lib/db";
 import { log } from "@/lib/log";
+import { garantirJobsDiarios } from "./agendamentos";
 import { contarAtivos, contarVencidos, recuperarTravados } from "./fila";
 import { HEADER_SEGREDO_JOBS } from "./segredo";
 
@@ -26,6 +27,7 @@ export type ResumoDespacho = {
  * Chamado pela Scheduled Function: recupera travados e dispara até
  * max(0, min(vencidos, paralelismo - ativos)) execuções da Background Function.
  * Cada disparo espera só a resposta 202 (até 5 s); quem executa é a Background.
+ * No fim, garante os jobs diários (manutenção).
  */
 export async function despachar(opcoes: OpcoesDespacho): Promise<ResumoDespacho> {
   const db = opcoes.db ?? obterDb();
@@ -61,6 +63,12 @@ export async function despachar(opcoes: OpcoesDespacho): Promise<ResumoDespacho>
     disparados: quantidade - falhas.length,
     falhasDisparo: falhas.length,
   };
+  // Depois do disparo: o job diário criado agora entra no próximo despacho.
+  try {
+    await garantirJobsDiarios(db);
+  } catch (erro) {
+    log.error("despacho: falha ao agendar jobs diários", { erro });
+  }
   log.info("despacho: concluído", resumo);
   return resumo;
 }

@@ -1,5 +1,6 @@
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -13,11 +14,16 @@ import { lerEnv, type Env } from "@/lib/env";
  * - Endpoint da conta, região "auto", path-style (funciona com qualquer nome de bucket).
  * - Checksums só quando exigidos: o SDK v3 recente adiciona CRC32 por padrão,
  *   o que quebraria o PUT feito pelo navegador com a URL pré-assinada.
+ * - Duas áreas com o mesmo token: "publica" (R2_BUCKET, domínio público, mídia
+ *   publicada) e "privada" (R2_BUCKET_PRIVADO, sem domínio público: referências
+ *   da marca, lidas só por URL GET assinada de 5 minutos).
  */
 
 export const VALIDADE_URL_UPLOAD_S = 15 * 60;
+export const VALIDADE_URL_LEITURA_S = 5 * 60;
 
 export type ConfigR2 = Env<"r2">;
+export type AreaR2 = "publica" | "privada";
 
 let clienteCache: { cliente: S3Client; config: ConfigR2 } | undefined;
 
@@ -48,15 +54,24 @@ export function limparClienteR2() {
   clienteCache = undefined;
 }
 
+export function bucketDa(area: AreaR2): string {
+  return area === "privada" ? lerEnv("r2Privado").R2_BUCKET_PRIVADO : r2().config.R2_BUCKET;
+}
+
 /**
  * URL PUT pré-assinada (15 min) com Content-Type e Content-Length assinados:
  * o navegador precisa enviar exatamente esse tipo e esse tamanho.
  * (R2 não aceita POST pré-assinado com content-length-range.)
  */
-export async function gerarUrlUpload(dados: { chave: string; tipoMime: string; tamanhoBytes: number }) {
-  const { cliente, config } = r2();
+export async function gerarUrlUpload(dados: {
+  chave: string;
+  tipoMime: string;
+  tamanhoBytes: number;
+  area?: AreaR2;
+}) {
+  const { cliente } = r2();
   const comando = new PutObjectCommand({
-    Bucket: config.R2_BUCKET,
+    Bucket: bucketDa(dados.area ?? "publica"),
     Key: dados.chave,
     ContentType: dados.tipoMime,
     ContentLength: dados.tamanhoBytes,
@@ -67,24 +82,89 @@ export async function gerarUrlUpload(dados: { chave: string; tipoMime: string; t
   });
 }
 
+function naoEncontrado(erro: unknown): boolean {
+  return (
+    erro instanceof S3ServiceException &&
+    (erro.name === "NotFound" || erro.name === "NoSuchKey" || erro.$metadata?.httpStatusCode === 404)
+  );
+}
+
 export async function verificarObjeto(
   chave: string,
+  area: AreaR2 = "publica",
 ): Promise<{ tamanhoBytes: number; tipoMime: string | undefined } | null> {
-  const { cliente, config } = r2();
+  const { cliente } = r2();
   try {
-    const r = await cliente.send(new HeadObjectCommand({ Bucket: config.R2_BUCKET, Key: chave }));
+    const r = await cliente.send(new HeadObjectCommand({ Bucket: bucketDa(area), Key: chave }));
     return { tamanhoBytes: r.ContentLength ?? -1, tipoMime: r.ContentType };
   } catch (erro) {
-    if (erro instanceof S3ServiceException && (erro.name === "NotFound" || erro.$metadata?.httpStatusCode === 404)) {
-      return null;
-    }
+    if (naoEncontrado(erro)) return null;
     throw erro;
   }
 }
 
-export async function removerObjeto(chave: string) {
-  const { cliente, config } = r2();
-  await cliente.send(new DeleteObjectCommand({ Bucket: config.R2_BUCKET, Key: chave }));
+/** Apaga o objeto. Objeto inexistente não é erro. */
+export async function removerObjeto(chave: string, area: AreaR2 = "publica") {
+  const { cliente } = r2();
+  try {
+    await cliente.send(new DeleteObjectCommand({ Bucket: bucketDa(area), Key: chave }));
+  } catch (erro) {
+    if (!naoEncontrado(erro)) throw erro;
+  }
+}
+
+/**
+ * Lê o objeto inteiro em memória, recusando passar de `limiteBytes`
+ * (protege a função de arquivos maiores que o combinado). Null se não existe.
+ */
+export async function lerObjeto(chave: string, area: AreaR2, limiteBytes: number): Promise<Buffer | null> {
+  const { cliente } = r2();
+  let resposta;
+  try {
+    resposta = await cliente.send(new GetObjectCommand({ Bucket: bucketDa(area), Key: chave }));
+  } catch (erro) {
+    if (naoEncontrado(erro)) return null;
+    throw erro;
+  }
+  if ((resposta.ContentLength ?? 0) > limiteBytes) throw new Error("Objeto maior que o limite.");
+  const corpo = resposta.Body;
+  if (!corpo) return Buffer.alloc(0);
+  const bytes = await corpo.transformToByteArray();
+  if (bytes.byteLength > limiteBytes) throw new Error("Objeto maior que o limite.");
+  return Buffer.from(bytes);
+}
+
+export async function gravarObjeto(chave: string, corpo: Buffer, tipoMime: string, area: AreaR2) {
+  const { cliente } = r2();
+  await cliente.send(
+    new PutObjectCommand({
+      Bucket: bucketDa(area),
+      Key: chave,
+      Body: corpo,
+      ContentType: tipoMime,
+      ContentLength: corpo.byteLength,
+    }),
+  );
+}
+
+/**
+ * URL GET assinada de 5 minutos (gerada a cada renderização). Com `nomeDownload`,
+ * o navegador baixa o arquivo em vez de abrir (usado no SVG original).
+ */
+export async function gerarUrlLeitura(
+  chave: string,
+  opcoes: { area?: AreaR2; nomeDownload?: string; tipoMime?: string } = {},
+): Promise<string> {
+  const { cliente } = r2();
+  const comando = new GetObjectCommand({
+    Bucket: bucketDa(opcoes.area ?? "privada"),
+    Key: chave,
+    ...(opcoes.nomeDownload
+      ? { ResponseContentDisposition: `attachment; filename="${opcoes.nomeDownload.replace(/[^\w.-]+/g, "_")}"` }
+      : {}),
+    ...(opcoes.tipoMime ? { ResponseContentType: opcoes.tipoMime } : {}),
+  });
+  return getSignedUrl(cliente, comando, { expiresIn: VALIDADE_URL_LEITURA_S });
 }
 
 export function urlPublica(chave: string): string {

@@ -28,6 +28,19 @@ const esquemas = {
     R2_BUCKET: z.string().min(1),
     R2_PUBLIC_BASE_URL: z.string().url(),
   }),
+  /** Bucket privado (referências da marca): sem domínio público, leitura só por URL assinada. */
+  r2Privado: z.object({
+    R2_BUCKET_PRIVADO: z.string().min(1, "R2_BUCKET_PRIVADO não definida"),
+  }),
+  /**
+   * Claude API. A chave só é exigida na hora de chamar a API (src/ia/claude.ts);
+   * o modelo e o fallback são lidos também para estimar custos.
+   */
+  ia: z.object({
+    ANTHROPIC_API_KEY: z.string().optional(),
+    IA_MODELO_TEXTO: z.string().min(1).optional(),
+    IA_FALLBACK: z.enum(["default", "desligado"]).default("default"),
+  }),
   email: z
     .object({
       EMAIL_PROVEDOR: z.enum(["resend", "console", "memoria"]).default("console"),

@@ -2,7 +2,7 @@ import type { Job } from "@/generated/prisma/client";
 import { Prisma } from "@/generated/prisma/client";
 import { obterDb, type ClienteDb } from "@/lib/db";
 import { log, redigirTexto } from "@/lib/log";
-import { calcularAtrasoMs } from "./backoff";
+import { atrasoParaErro } from "./backoff";
 import { ErroPermanente } from "./erros";
 import { MAX_TENTATIVAS_PADRAO, PRAZO_RECUPERACAO_MS, TAMANHO_MAX_ERRO } from "./limites";
 import { REGISTRO } from "./registro";
@@ -143,7 +143,8 @@ export function textoDoErro(erro: unknown): string {
 
 /**
  * Falha: ErroPermanente ou tentativas esgotadas → FALHOU.
- * Senão volta para PENDENTE com espera exponencial.
+ * Senão volta para PENDENTE com espera exponencial (ou a espera pedida por
+ * ErroComEspera, se for maior).
  */
 export async function registrarFalha(
   ficha: FichaPosse,
@@ -153,7 +154,7 @@ export async function registrarFalha(
 ): Promise<"FALHOU" | "PENDENTE" | "posse_perdida"> {
   const definitivo = erro instanceof ErroPermanente || ficha.tentativas >= ficha.maxTentativas;
   const texto = textoDoErro(erro);
-  const atrasoMs = definitivo ? 0 : calcularAtrasoMs(ficha.tentativas, aleatorio);
+  const atrasoMs = definitivo ? 0 : atrasoParaErro(ficha.tentativas, erro, aleatorio);
   const novoStatus = definitivo ? "FALHOU" : "PENDENTE";
   const alteradas = await db.$executeRaw`
     UPDATE "Job"
