@@ -15,6 +15,12 @@ const TERMOS_SENSIVEIS = [
   "cookie",
   "signature",
   "xsegredojobs",
+  // Dados do briefing e da IA nunca vão para o log.
+  "briefing",
+  "respostas",
+  "conteudo",
+  "instrucao",
+  "payload",
 ];
 
 export const REDIGIDO = "[redigido]";
