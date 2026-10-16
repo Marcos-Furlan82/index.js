@@ -13,6 +13,11 @@ describe("registro de jobs", () => {
     expect(maiorTimeout(REGISTRO)).toBeLessThanOrEqual(TIMEOUT_MAXIMO_MS);
   });
 
+  it("o maior timeout do registro é o da ficha do produto (6 min): o executor só reivindica com 7 min livres", () => {
+    expect(REGISTRO["gerar-ficha-produto"]).toBeDefined();
+    expect(maiorTimeout(REGISTRO)).toBe(6 * 60_000);
+  });
+
   it("rejeita timeout acima de 8 min ou não positivo", () => {
     expect(() => validarRegistro({ x: def(TIMEOUT_MAXIMO_MS + 1) })).toThrow(/timeoutMs/);
     expect(() => validarRegistro({ x: def(0) })).toThrow(/timeoutMs/);

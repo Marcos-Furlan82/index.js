@@ -1,6 +1,7 @@
 import { TIMEOUT_MAXIMO_MS, TIMEOUT_PADRAO_MS } from "./limites";
 import type { DefinicaoJob, Registro } from "./tipos";
 import { enviarEmail } from "./handlers/enviar-email";
+import { gerarFichaProdutoJob } from "./handlers/gerar-ficha-produto";
 import { manutencaoDiaria } from "./handlers/manutencao-diaria";
 import { ping } from "./handlers/ping";
 
@@ -30,6 +31,7 @@ export const REGISTRO: Registro = validarRegistro({
   ping,
   "enviar-email": enviarEmail,
   "manutencao-diaria": manutencaoDiaria,
+  "gerar-ficha-produto": gerarFichaProdutoJob,
 });
 
-export type TipoJob = "ping" | "enviar-email" | "manutencao-diaria";
+export type TipoJob = "ping" | "enviar-email" | "manutencao-diaria" | "gerar-ficha-produto";

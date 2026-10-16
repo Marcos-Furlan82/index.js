@@ -1,9 +1,10 @@
+import { readFile } from "node:fs/promises";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { enfileirarJob } from "@/jobs/fila";
 import { obterDb } from "@/lib/db";
-import { carregarFuncao, contextoFalso, listarFuncoes } from "./bundle-funcoes";
+import { carregarFuncao, contextoFalso, empacotarFuncao, listarFuncoes } from "./bundle-funcoes";
 
 const SEGREDO = () => process.env.JOBS_SECRET!;
 
@@ -39,6 +40,14 @@ describe("bundle das funções do Netlify (como o Netlify empacota)", () => {
       const modulo = await carregarFuncao(nome);
       expect(typeof modulo.default).toBe("function");
     }
+  });
+
+  it("o executor leva o SDK da Anthropic e nunca sharp ou jsdom (só usados no painel)", async () => {
+    const codigo = await readFile(await empacotarFuncao("executar-jobs-background"), "utf8");
+    const importados = [...codigo.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1]);
+    expect(importados).toContain("@anthropic-ai/sdk");
+    expect(importados.some((i) => /^(sharp|jsdom|dompurify)(\/|$)/.test(i))).toBe(false);
+    expect(codigo).not.toMatch(/require\(["'](sharp|jsdom|dompurify)["']\)/);
   });
 
   it("executar-jobs-background recusa sem segredo, com segredo curto ou errado", async () => {
