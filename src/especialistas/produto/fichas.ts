@@ -1,12 +1,23 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { faltandoParaGerar, type Faltante } from "@/briefing/obrigatorios";
+import { carregarContextoBriefing } from "@/briefing/salvar";
 import { podeGastar, type DecisaoGasto } from "@/custos/orcamento";
 import { enfileirarJob, reenfileirarJob } from "@/jobs/fila";
 import { obterDb } from "@/lib/db";
 import { formatarBRL } from "@/lib/dinheiro";
+import {
+  BLOCOS_FICHA,
+  CHAVES_BLOCO,
+  esquemaEdicaoBloco,
+  esquemaFicha,
+  type CampoFicha,
+  type ChaveBloco,
+  type Ficha,
+} from "./esquema";
 import type { ResultadoEstimativa } from "./estimativa";
-import { prepararGeracao } from "./gerar";
+import { lerFicha, prepararGeracao } from "./gerar";
+import { bloqueiosAprovacao, chavePendencia, contextoRegras, recalcularPendencias } from "./regras";
 
 export const MAX_INSTRUCAO = 500;
 
@@ -112,4 +123,161 @@ export async function estadoGeracao(geracaoJobId: string | null, db: PrismaClien
     return { fase: "erro", codigo, jobId: job.id };
   }
   return { fase: "concluida" };
+}
+
+// ---------------------------------------------------------------------------
+// Revisão, edição e aprovação
+// ---------------------------------------------------------------------------
+
+export type ResultadoFicha = { ok: true; versao: number } | { ok: false; erro: string };
+
+const VERSAO_DESATUALIZADA = "Existe uma versão mais nova desta ficha. Recarregue a página.";
+
+async function travarFicha(tx: ClienteDbTx, produtoId: string) {
+  await tx.$queryRaw`SELECT 1 AS ok FROM (SELECT pg_advisory_xact_lock(hashtextextended(${`ficha:${produtoId}`}, 0))) AS trava`;
+}
+
+type ClienteDbTx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
+
+/** Ficha do produto da conta, e se é a versão mais recente. */
+async function buscarFichaDaConta(tx: ClienteDbTx, contaId: string, produtoId: string, fichaId: string) {
+  const ficha = await tx.fichaProduto.findUnique({ where: { id: fichaId } });
+  if (!ficha || ficha.contaId !== contaId || ficha.produtoId !== produtoId) return null;
+  const ultima = await tx.fichaProduto.aggregate({ where: { produtoId }, _max: { versao: true } });
+  return { ficha, maisRecente: ficha.versao === ultima._max.versao };
+}
+
+export async function marcarBlocoRevisado(
+  contaId: string,
+  produtoId: string,
+  fichaId: string,
+  bloco: string,
+  revisado: boolean,
+  db: PrismaClient = obterDb(),
+): Promise<ResultadoFicha> {
+  if (!(CHAVES_BLOCO as string[]).includes(bloco)) return { ok: false, erro: "Bloco inválido." };
+  return db.$transaction(async (tx) => {
+    await travarFicha(tx, produtoId);
+    const achada = await buscarFichaDaConta(tx, contaId, produtoId, fichaId);
+    if (!achada) return { ok: false as const, erro: "Ficha não encontrada." };
+    if (!achada.maisRecente) return { ok: false as const, erro: VERSAO_DESATUALIZADA };
+    if (achada.ficha.status !== "RASCUNHO") return { ok: false as const, erro: "Esta versão já foi aprovada. Edite um bloco para criar uma nova." };
+    const atuais = new Set(achada.ficha.blocosRevisados);
+    if (revisado) atuais.add(bloco);
+    else atuais.delete(bloco);
+    await tx.fichaProduto.update({ where: { id: fichaId }, data: { blocosRevisados: [...atuais] } });
+    return { ok: true as const, versao: achada.ficha.versao };
+  });
+}
+
+/**
+ * Edição manual de um bloco: cria uma NOVA versão (origem EDICAO) a partir da
+ * mais recente. Os campos do bloco viram "informado", o bloco fica revisado,
+ * as pendências da IA desse bloco saem e as de regra são recalculadas.
+ */
+export async function editarBlocoFicha(
+  contaId: string,
+  produtoId: string,
+  fichaId: string,
+  bloco: string,
+  valor: unknown,
+  db: PrismaClient = obterDb(),
+): Promise<ResultadoFicha> {
+  if (!(CHAVES_BLOCO as string[]).includes(bloco) || bloco === "provas") return { ok: false, erro: "Este bloco não pode ser editado aqui." };
+  const chave = bloco as ChaveBloco;
+  const validado = esquemaEdicaoBloco[chave].safeParse(valor);
+  if (!validado.success) return { ok: false, erro: validado.error.issues[0]?.message ?? "Dados inválidos." };
+  const carregado = await carregarContextoBriefing(contaId, produtoId, db);
+  if (!carregado) return { ok: false, erro: "Produto não encontrado." };
+  const rc = contextoRegras(carregado.ctx);
+  const campos = BLOCOS_FICHA.find((b) => b.chave === chave)!.campos as readonly CampoFicha[];
+
+  return db.$transaction(async (tx) => {
+    await travarFicha(tx, produtoId);
+    const achada = await buscarFichaDaConta(tx, contaId, produtoId, fichaId);
+    if (!achada) return { ok: false as const, erro: "Ficha não encontrada." };
+    if (!achada.maisRecente) return { ok: false as const, erro: VERSAO_DESATUALIZADA };
+    const atual = lerFicha(achada.ficha.conteudo);
+    if (!atual) return { ok: false as const, erro: "Não foi possível ler esta ficha." };
+    const novo: Ficha = recalcularPendencias(
+      {
+        ...atual,
+        ...(validado.data as Partial<Ficha>),
+        confianca: [
+          ...atual.confianca.filter((c) => !campos.includes(c.campo)),
+          ...campos.map((campo) => ({ campo, nivel: "informado" as const })),
+        ],
+        pendencias: atual.pendencias.filter((p) => !(p.origem === "ia" && campos.includes(p.campo))),
+      },
+      rc,
+    );
+    const criada = await tx.fichaProduto.create({
+      data: {
+        produtoId,
+        contaId,
+        versao: achada.ficha.versao + 1,
+        status: "RASCUNHO",
+        origem: "EDICAO",
+        conteudo: esquemaFicha.parse(novo),
+        baseVersao: achada.ficha.versao,
+        blocosRevisados: [...new Set([...achada.ficha.blocosRevisados, chave])],
+        pendenciasDispensadas: achada.ficha.pendenciasDispensadas,
+      },
+    });
+    return { ok: true as const, versao: criada.versao };
+  });
+}
+
+/** "Dispensar" uma pendência de melhora (nunca as que bloqueiam). */
+export async function dispensarPendencia(
+  contaId: string,
+  produtoId: string,
+  fichaId: string,
+  chavePendenciaAlvo: string,
+  db: PrismaClient = obterDb(),
+): Promise<ResultadoFicha> {
+  return db.$transaction(async (tx) => {
+    await travarFicha(tx, produtoId);
+    const achada = await buscarFichaDaConta(tx, contaId, produtoId, fichaId);
+    if (!achada) return { ok: false as const, erro: "Ficha não encontrada." };
+    const ficha = lerFicha(achada.ficha.conteudo);
+    const pendencia = ficha?.pendencias.find((p) => chavePendencia(p) === chavePendenciaAlvo);
+    if (!pendencia || pendencia.criticidade !== "melhora") return { ok: false as const, erro: "Só sugestões de melhora podem ser dispensadas." };
+    await tx.fichaProduto.update({
+      where: { id: fichaId },
+      data: { pendenciasDispensadas: [...new Set([...achada.ficha.pendenciasDispensadas, chavePendenciaAlvo])] },
+    });
+    return { ok: true as const, versao: achada.ficha.versao };
+  });
+}
+
+/**
+ * Aprova a versão mais recente em rascunho: zero pendências que bloqueiam e
+ * todos os blocos com campo deduzido pela IA revisados. A aprovada anterior
+ * vira SUBSTITUIDA.
+ */
+export async function aprovarFicha(
+  contaId: string,
+  produtoId: string,
+  fichaId: string,
+  aprovadaPor: string,
+  db: PrismaClient = obterDb(),
+): Promise<ResultadoFicha | { ok: false; erro: string; motivos: string[] }> {
+  return db.$transaction(async (tx) => {
+    await travarFicha(tx, produtoId);
+    const achada = await buscarFichaDaConta(tx, contaId, produtoId, fichaId);
+    if (!achada) return { ok: false as const, erro: "Ficha não encontrada." };
+    if (!achada.maisRecente) return { ok: false as const, erro: VERSAO_DESATUALIZADA };
+    if (achada.ficha.status !== "RASCUNHO") return { ok: false as const, erro: "Esta versão não está em revisão." };
+    const ficha = lerFicha(achada.ficha.conteudo);
+    if (!ficha) return { ok: false as const, erro: "Não foi possível ler esta ficha." };
+    const motivos = bloqueiosAprovacao(ficha, achada.ficha.blocosRevisados);
+    if (motivos.length > 0) return { ok: false as const, erro: "Ainda não dá para aprovar.", motivos };
+    await tx.fichaProduto.updateMany({ where: { produtoId, status: "APROVADA" }, data: { status: "SUBSTITUIDA" } });
+    await tx.fichaProduto.update({
+      where: { id: fichaId },
+      data: { status: "APROVADA", aprovadaEm: new Date(), aprovadaPor },
+    });
+    return { ok: true as const, versao: achada.ficha.versao };
+  });
 }
