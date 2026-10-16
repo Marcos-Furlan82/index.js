@@ -11,6 +11,14 @@ const TABELAS = [
   "PrecoModelo",
   "Configuracao",
   "ContaInstagram",
+  "Marca",
+  "Produto",
+  "Isca",
+  "FichaProduto",
+  "Referencia",
+  "ConjuntoReferencias",
+  "ReservaOrcamento",
+  "Notificacao",
 ];
 
 export async function limparBanco() {
