@@ -15,6 +15,8 @@ env:
   DATABASE_URL_TEST: postgresql://planejador:planejador@localhost:5432/planejador_teste
   JOBS_SECRET: segredo-ficticio-do-ci-com-mais-de-32-caracteres
   EMAIL_PROVEDOR: memoria
+  # Os testes nunca chamam a API real (cliente de IA falso).
+  ANTHROPIC_API_KEY: chave-ficticia-do-ci
   NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:

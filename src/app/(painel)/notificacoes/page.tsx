@@ -11,7 +11,7 @@ export default async function PaginaNotificacoes() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Avisos</h1>
-      <FormularioAcao acao={async () => marcarTodasComoLidas()} rotuloBotao="Marcar todos como lidos" />
+      <FormularioAcao acao={marcarTodasComoLidas} rotuloBotao="Marcar todos como lidos" />
       {avisos.length === 0 ? (
         <p className="text-sm text-slate-600">Nenhum aviso por enquanto.</p>
       ) : (

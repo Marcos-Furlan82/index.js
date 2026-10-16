@@ -20,7 +20,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "gestor:criar": "tsx scripts/criar-gestor.ts",
-    "jobs:rodar": "tsx scripts/rodar-jobs.ts"
+    "jobs:rodar": "tsx scripts/rodar-jobs.ts",
+    "demo:dados": "tsx scripts/demo-dados.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
