@@ -41,6 +41,19 @@ export type ResumoMes = {
   saldoBrl: Decimal;
   porTipo: Record<TipoGeracao, Decimal>;
   porConta: { contaId: string | null; nome: string; gastoBrl: Decimal; tetoBrl: Decimal | null }[];
+  /** Reservas que ainda contam (gerações em andamento ou com modelo sem preço). */
+  reservadoBrl: Decimal;
+  /** Divisão por conta: todas as contas não arquivadas, com gasto, reservado e cota. */
+  divisao: {
+    contaId: string;
+    nome: string;
+    gastoBrl: Decimal;
+    reservadoBrl: Decimal;
+    tetoBrl: Decimal | null;
+    percentual: Decimal | null;
+  }[];
+  /** Soma das cotas por conta (aviso se passar do teto geral). */
+  somaCotasBrl: Decimal;
   projecao: { valorBrl: Decimal; poucoConfiavel: boolean };
   geracoesSemPreco: number;
   configurado: boolean;
@@ -81,10 +94,40 @@ export async function resumoDoMes(db: ClienteDb = obterDb(), agora = new Date())
     };
   });
 
+  const reservasAtivas = {
+    mesReferencia: mes,
+    OR: [{ status: "ATIVA" as const, expiraEm: { gt: agora } }, { status: "PENDENTE_PRECO" as const }],
+  };
+  const [reservado, reservadoPorConta, contasAtivas] = await Promise.all([
+    db.reservaOrcamento.aggregate({ _sum: { valorBrl: true }, where: reservasAtivas }),
+    db.reservaOrcamento.groupBy({ by: ["contaId"], where: reservasAtivas, _sum: { valorBrl: true } }),
+    db.contaInstagram.findMany({
+      where: { arquivadaEm: null },
+      orderBy: { nome: "asc" },
+      select: { id: true, nome: true, tetoMensalBrl: true },
+    }),
+  ]);
+  const divisao = contasAtivas.map((c) => {
+    const gasto = dec(grupos.find((g) => g.contaId === c.id)?._sum.custoBrl ?? 0);
+    const teto = c.tetoMensalBrl ? dec(c.tetoMensalBrl) : null;
+    return {
+      contaId: c.id,
+      nome: c.nome,
+      gastoBrl: gasto,
+      reservadoBrl: dec(reservadoPorConta.find((r) => r.contaId === c.id)?._sum.valorBrl ?? 0),
+      tetoBrl: teto,
+      percentual: teto ? percentual(gasto, teto) : null,
+    };
+  });
+  const somaCotasBrl = divisao.reduce((soma, c) => soma.add(c.tetoBrl ?? 0), dec(0));
+
   return {
     mes,
     tetoBrl,
     gastoBrl,
+    reservadoBrl: dec(reservado._sum.valorBrl ?? 0),
+    divisao,
+    somaCotasBrl,
     percentual: percentual(gastoBrl, tetoBrl),
     saldoBrl: tetoBrl.sub(gastoBrl),
     porTipo,

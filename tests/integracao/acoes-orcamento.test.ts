@@ -7,6 +7,7 @@ import {
   salvarEmailNotificacao,
   salvarPreco,
   salvarTeto,
+  salvarTetoConta,
 } from "@/app/(painel)/configuracoes/orcamento/actions";
 import { obterConfiguracao } from "@/custos/configuracao";
 import { obterDb } from "@/lib/db";
@@ -29,6 +30,7 @@ describe("ações de Configurações → Orçamento", () => {
       () => salvarEmailNotificacao({}, form({ email: "a@b.com" })),
       () => salvarPreco({}, form({ provedor: "p", modelo: "m", usdPorImagem: "1" })),
       () => removerPreco({}, form({ id: "6f1c2a8e-1111-4222-8333-444455556666" })),
+      () => salvarTetoConta({}, form({ contaId: "6f1c2a8e-1111-4222-8333-444455556666", teto: "10" })),
     ];
     for (const acao of acoes) expect(await destinoDoRedirect(acao)).toBe("/login");
     expect(await obterDb().precoModelo.count()).toBe(0);
@@ -81,5 +83,30 @@ describe("ações de Configurações → Orçamento", () => {
     expect(precos[0].usdPorMTokSaida).toBeNull();
     expect((await removerPreco({}, form({ id: precos[0].id }))).ok).toBeTruthy();
     expect(await obterDb().precoModelo.count()).toBe(0);
+  });
+
+  it("cota por conta: salva, valida, remove e recusa conta arquivada", async () => {
+    await entrarComoGestor();
+    const conta = await obterDb().contaInstagram.create({ data: { nome: "Doce Ateliê" } });
+    expect(await salvarTetoConta({}, form({ contaId: conta.id, teto: "250,50" }))).toEqual({ ok: "Cota de Doce Ateliê salva." });
+    expect((await obterDb().contaInstagram.findUniqueOrThrow({ where: { id: conta.id } })).tetoMensalBrl?.toString()).toBe("250.5");
+    expect((await salvarTetoConta({}, form({ contaId: conta.id, teto: "0" }))).erro).toBeTruthy();
+    expect((await salvarTetoConta({}, form({ contaId: conta.id, teto: "" }))).ok).toContain("só o teto geral");
+    expect((await obterDb().contaInstagram.findUniqueOrThrow({ where: { id: conta.id } })).tetoMensalBrl).toBeNull();
+    await obterDb().contaInstagram.update({ where: { id: conta.id }, data: { arquivadaEm: new Date() } });
+    expect((await salvarTetoConta({}, form({ contaId: conta.id, teto: "10" }))).erro).toBe("Conta não encontrada.");
+  });
+
+  it("salvar o preço recalcula as gerações que estavam sem preço", async () => {
+    await entrarComoGestor();
+    await obterDb().configuracao.create({ data: { id: "global", cotacaoUsdBrl: "5" } });
+    await obterDb().geracaoIA.create({
+      data: { provedor: "anthropic", modelo: "m1", tipo: "TEXTO", tokensSaida: 1000, precoPendente: true, mesReferencia: "2026-10" },
+    });
+    const r = await salvarPreco({}, form({ provedor: "anthropic", modelo: "m1", usdPorMTokSaida: "50" }));
+    expect(r.ok).toContain("1 geração sem preço foi recalculada");
+    const g = await obterDb().geracaoIA.findFirstOrThrow();
+    expect(g.precoPendente).toBe(false);
+    expect(g.custoBrl?.toString()).toBe("0.25");
   });
 });

@@ -202,3 +202,37 @@ describe("alertas de orçamento", () => {
     expect(await contar()).toEqual({ alertas: 2, jobs: 2 });
   });
 });
+
+describe("alertas e divisão por conta", () => {
+  it("conta com cota recebe alertas próprios (uma vez por mês), com o nome da conta no e-mail", async () => {
+    await configurar();
+    const conta = await db().contaInstagram.create({ data: { nome: "Doce Ateliê", tetoMensalBrl: "100" } });
+    const semCota = await db().contaInstagram.create({ data: { nome: "Sem cota" } });
+    await gastar(60, { contaId: conta.id }); // 60% da cota, 6% do geral
+    await gastar(60, { contaId: semCota.id });
+    const alertas = await db().alertaOrcamento.findMany();
+    expect(alertas.map((a) => `${a.escopo}:${a.limiar}`)).toEqual([`${conta.id}:50`]);
+    const job = await db().job.findFirstOrThrow({ where: { chaveIdempotencia: `alerta:2026-10:${conta.id}:50` } });
+    expect(job.payload).toMatchObject({ dados: { nomeConta: "Doce Ateliê", escopo: conta.id, tetoBrl: "100.00" } });
+    await gastar(1, { contaId: conta.id });
+    expect(await db().alertaOrcamento.count()).toBe(1);
+  });
+
+  it("resumo traz reservado, divisão por conta (sem arquivadas) e soma das cotas", async () => {
+    await configurar();
+    const a = await db().contaInstagram.create({ data: { nome: "A", tetoMensalBrl: "700" } });
+    await db().contaInstagram.create({ data: { nome: "B", tetoMensalBrl: "500" } });
+    await db().contaInstagram.create({ data: { nome: "Velha", tetoMensalBrl: "50", arquivadaEm: new Date() } });
+    await gastar(70, { contaId: a.id });
+    await db().reservaOrcamento.create({
+      data: { contaId: a.id, mesReferencia: "2026-10", valorBrl: "3", origem: "job:x", expiraEm: new Date(AGORA.getTime() + 60_000) },
+    });
+    const r = await resumoDoMes(db(), AGORA);
+    expect(r.reservadoBrl.toString()).toBe("3");
+    expect(r.divisao.map((c) => c.nome)).toEqual(["A", "B"]);
+    expect(r.divisao[0]).toMatchObject({ contaId: a.id });
+    expect(r.divisao[0].percentual?.toString()).toBe("10");
+    expect(r.divisao[0].reservadoBrl.toString()).toBe("3");
+    expect(r.somaCotasBrl.toString()).toBe("1200");
+  });
+});

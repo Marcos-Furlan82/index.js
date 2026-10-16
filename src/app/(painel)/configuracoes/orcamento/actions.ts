@@ -123,3 +123,27 @@ export async function removerPreco(_a: EstadoFormulario, formData: FormData): Pr
   revalidatePath(CAMINHO);
   return { ok: "Removido." };
 }
+
+const esquemaConta = z.string().uuid();
+
+/** Cota mensal de uma conta dentro do teto geral. Vazio remove a cota. */
+export async function salvarTetoConta(_a: EstadoFormulario, formData: FormData): Promise<EstadoFormulario> {
+  await exigirSessao();
+  const contaId = esquemaConta.safeParse(formData.get("contaId"));
+  if (!contaId.success) return { erro: "Conta inválida." };
+  const conta = await obterDb().contaInstagram.findUnique({ where: { id: contaId.data } });
+  if (!conta || conta.arquivadaEm) return { erro: "Conta não encontrada." };
+  const bruto = texto(formData, "teto").trim();
+  let valor: Decimal | null = null;
+  if (bruto) {
+    const r = parseValorBR(bruto, CASAS.brl);
+    if (!r.ok) return { erro: r.erro };
+    if (r.valor.lte(0)) return { erro: "A cota precisa ser maior que zero. Deixe vazio para tirar a cota." };
+    if (r.valor.gte(new Decimal("10000000000"))) return { erro: "Valor alto demais." };
+    valor = r.valor;
+  }
+  await obterDb().contaInstagram.update({ where: { id: conta.id }, data: { tetoMensalBrl: valor } });
+  revalidatePath(CAMINHO);
+  revalidatePath("/");
+  return { ok: valor ? `Cota de ${conta.nome} salva.` : `${conta.nome} agora usa só o teto geral.` };
+}

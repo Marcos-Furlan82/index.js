@@ -9,16 +9,21 @@ export const dadosAlertaOrcamento = z.object({
   gastoBrl: z.string(),
   tetoBrl: z.string(),
   escopo: z.string().default("geral"),
+  /** Só nos alertas da cota de uma conta. */
+  nomeConta: z.string().max(200).optional(),
 });
 
 export function modeloAlertaOrcamento(dados: z.infer<typeof dadosAlertaOrcamento>) {
   const [ano, mes] = dados.mesReferencia.split("-");
+  const deQuem = dados.nomeConta ? ` da conta ${dados.nomeConta}` : "";
   const assunto =
     dados.limiar >= 100
-      ? `Orçamento de IA atingido (${mes}/${ano})`
-      : `Orçamento de IA: ${dados.limiar}% usado (${mes}/${ano})`;
+      ? `Orçamento de IA${deQuem} atingido (${mes}/${ano})`
+      : `Orçamento de IA${deQuem}: ${dados.limiar}% usado (${mes}/${ano})`;
   const linhas = [
-    `O gasto com IA em ${mes}/${ano} chegou a ${formatarBRL(dados.gastoBrl)}, ${formatarDecimalBR(dados.percentual, 2)}% do teto de ${formatarBRL(dados.tetoBrl)}.`,
+    dados.nomeConta
+      ? `O gasto com IA da conta ${dados.nomeConta} em ${mes}/${ano} chegou a ${formatarBRL(dados.gastoBrl)}, ${formatarDecimalBR(dados.percentual, 2)}% da cota de ${formatarBRL(dados.tetoBrl)}.`
+      : `O gasto com IA em ${mes}/${ano} chegou a ${formatarBRL(dados.gastoBrl)}, ${formatarDecimalBR(dados.percentual, 2)}% do teto de ${formatarBRL(dados.tetoBrl)}.`,
     dados.limiar >= 100
       ? "A geração de conteúdo novo com IA segue a regra configurada para o teto. As publicações aprovadas continuam."
       : "Nada foi bloqueado. Acompanhe em Configurações → Orçamento.",

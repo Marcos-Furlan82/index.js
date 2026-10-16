@@ -34,6 +34,11 @@ export function PainelGasto({ resumo, detalhado = false }: { resumo: ResumoMes; 
       <div className="h-3 w-full rounded bg-slate-100" aria-label={`${formatarDecimalBR(resumo.percentual, 2)}% do teto`}>
         <div className={`h-3 rounded ${corBarra}`} style={{ width: `${pct}%` }} />
       </div>
+      {resumo.reservadoBrl.gt(0) && (
+        <p className="text-sm text-slate-600">
+          Mais {formatarBRL(resumo.reservadoBrl)} separados para gerações em andamento.
+        </p>
+      )}
       <p className="text-sm text-slate-600">
         Projeção até o fim do mês: {formatarBRL(resumo.projecao.valorBrl)}
         {resumo.projecao.poucoConfiavel && " (pouco confiável nos primeiros dias do mês)"}.

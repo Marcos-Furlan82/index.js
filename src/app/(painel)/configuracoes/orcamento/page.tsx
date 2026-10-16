@@ -12,6 +12,7 @@ import {
   salvarEmailNotificacao,
   salvarPreco,
   salvarTeto,
+  salvarTetoConta,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -106,6 +107,65 @@ export default async function PaginaOrcamento() {
           </FormularioAcao>
         </section>
       </div>
+
+      <section className={CARTAO}>
+        <h2 className="text-lg font-medium">Divisão por conta</h2>
+        <p className="text-sm text-slate-600">
+          Opcional: uma cota mensal para cada conta, dentro do teto geral. Sem cota, a conta usa só o teto geral. Os
+          alertas de 50%, 80% e 100% também valem para cada cota.
+        </p>
+        {resumo.somaCotasBrl.gt(resumo.tetoBrl) && (
+          <p role="alert" className="rounded bg-amber-50 p-2 text-sm text-amber-800">
+            A soma das cotas ({formatarBRL(resumo.somaCotasBrl)}) passa do teto geral ({formatarBRL(resumo.tetoBrl)}). O
+            teto geral continua valendo: as contas podem não conseguir usar a cota inteira.
+          </p>
+        )}
+        {resumo.divisao.length === 0 ? (
+          <p className="text-sm text-slate-500">Nenhuma conta cadastrada ainda.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-slate-500">
+                <tr>
+                  <th className="py-2 pr-3">Conta</th>
+                  <th className="py-2 pr-3">Gasto no mês</th>
+                  <th className="py-2 pr-3">Em andamento</th>
+                  <th className="py-2 pr-3">Uso da cota</th>
+                  <th className="py-2">Cota mensal (R$)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resumo.divisao.map((c) => (
+                  <tr key={c.contaId} className="border-t border-slate-100 align-top">
+                    <td className="py-2 pr-3">{c.nome}</td>
+                    <td className="py-2 pr-3">{formatarBRL(c.gastoBrl)}</td>
+                    <td className="py-2 pr-3">{c.reservadoBrl.gt(0) ? formatarBRL(c.reservadoBrl) : "—"}</td>
+                    <td className="py-2 pr-3">
+                      {c.percentual ? `${formatarDecimalBR(c.percentual, 2)}%` : "sem cota"}
+                      {c.percentual && c.percentual.gte(80) && (
+                        <span className="ml-1 text-red-700">{c.percentual.gte(100) ? "(cota atingida)" : "(perto do limite)"}</span>
+                      )}
+                    </td>
+                    <td className="py-2">
+                      <FormularioAcao acao={salvarTetoConta} rotuloBotao="Salvar" className="flex items-center gap-2">
+                        <input type="hidden" name="contaId" value={c.contaId} />
+                        <input
+                          name="teto"
+                          aria-label={`Cota mensal de ${c.nome}`}
+                          defaultValue={c.tetoBrl ? formatarDecimalBR(c.tetoBrl, 2) : ""}
+                          placeholder="sem cota"
+                          inputMode="decimal"
+                          className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+                        />
+                      </FormularioAcao>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className={CARTAO}>
         <h2 className="text-lg font-medium">Tabela de preços dos modelos</h2>
