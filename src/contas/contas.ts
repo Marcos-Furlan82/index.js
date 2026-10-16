@@ -1,7 +1,8 @@
 import type { ContaInstagram, PrismaClient } from "@/generated/prisma/client";
+import { NOME_PROVISORIO } from "@/briefing/obrigatorios";
 import { obterDb, type ClienteDb } from "@/lib/db";
 
-export const NOME_PRODUTO_PROVISORIO = "Produto principal";
+export const NOME_PRODUTO_PROVISORIO = NOME_PROVISORIO;
 const USUARIO_VALIDO = /^[a-z0-9._]{1,30}$/;
 
 export type Resultado<T> = { ok: true; valor: T } | { ok: false; erro: string };
