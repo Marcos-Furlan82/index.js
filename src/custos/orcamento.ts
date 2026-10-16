@@ -97,36 +97,76 @@ export async function resumoDoMes(db: ClienteDb = obterDb(), agora = new Date())
   };
 }
 
+export type MotivoBloqueio = "orcamento_nao_configurado" | "teto_geral" | "teto_conta";
+
 export type DecisaoGasto = {
   permitido: boolean;
   acao: AcaoAoAtingirTeto;
   saldoGeralBrl: Decimal;
   saldoContaBrl?: Decimal;
-  motivo?: "orcamento_nao_configurado" | "teto_geral" | "teto_conta";
+  /** Gasto + reservado no mês (geral). */
+  comprometidoGeralBrl: Decimal;
+  tetoGeralBrl: Decimal;
+  motivo?: MotivoBloqueio;
   geracoesSemPreco: number;
 };
 
 /**
- * Pode gastar `custoPrevistoBrl` agora? Usada antes de gerar com IA.
- * - Sem cotação ou sem preços: não (orcamento_nao_configurado).
- * - gasto do mês + previsto <= teto geral.
- * - Se a conta tem cota: gasto da conta + previsto <= cota.
- * `acao` diz o que fazer quando não pode (quem chama troca o formato, se for o caso).
- * Publicação nunca passa por aqui.
+ * Comprometido no mês = gasto real (Σ GeracaoIA.custoBrl) + reservas que ainda
+ * contam (ATIVA dentro da validade ou PENDENTE_PRECO). Numa única instrução SQL
+ * (um só snapshot), geral e da conta.
  */
-export async function podeGastar(
+export async function comprometidoNoMes(
+  db: ClienteDb,
+  mes: string,
+  contaId: string | null,
+  agora = new Date(),
+): Promise<{ geral: Decimal; conta: Decimal; reservadoGeral: Decimal }> {
+  const [linha] = await db.$queryRaw<{ gasto: string; reservado: string; gastoConta: string; reservadoConta: string }[]>`
+    SELECT
+      (SELECT COALESCE(SUM("custoBrl"), 0) FROM "GeracaoIA"
+        WHERE "mesReferencia" = ${mes})::text AS "gasto",
+      (SELECT COALESCE(SUM("valorBrl"), 0) FROM "ReservaOrcamento"
+        WHERE "mesReferencia" = ${mes}
+          AND (("status" = 'ATIVA' AND "expiraEm" > ${agora}) OR "status" = 'PENDENTE_PRECO'))::text AS "reservado",
+      (SELECT COALESCE(SUM("custoBrl"), 0) FROM "GeracaoIA"
+        WHERE "mesReferencia" = ${mes} AND "contaId" = ${contaId})::text AS "gastoConta",
+      (SELECT COALESCE(SUM("valorBrl"), 0) FROM "ReservaOrcamento"
+        WHERE "mesReferencia" = ${mes} AND "contaId" = ${contaId}
+          AND (("status" = 'ATIVA' AND "expiraEm" > ${agora}) OR "status" = 'PENDENTE_PRECO'))::text AS "reservadoConta"`;
+  return {
+    geral: dec(linha.gasto).add(dec(linha.reservado)),
+    conta: dec(linha.gastoConta).add(dec(linha.reservadoConta)),
+    reservadoGeral: dec(linha.reservado),
+  };
+}
+
+/**
+ * Regra única do orçamento (usada por podeGastar e, sob trava, por reservarOrcamento):
+ * - Sem cotação ou sem preços: não (orcamento_nao_configurado).
+ * - comprometido do mês + previsto <= teto geral.
+ * - Se a conta tem cota: comprometido da conta + previsto <= cota.
+ */
+export async function avaliarGasto(
+  db: ClienteDb,
   contaId: string | null,
   custoPrevistoBrl: ValorDecimal,
-  db: ClienteDb = obterDb(),
   agora = new Date(),
 ): Promise<DecisaoGasto> {
   const mes = mesReferencia(agora);
   const config = await obterConfiguracao(db);
   const previsto = dec(custoPrevistoBrl);
-  const gastoGeral = await somaCustoBrl(db, mes);
-  const saldoGeralBrl = arredondar2(dec(config.tetoMensalBrl).sub(gastoGeral));
+  const comprometido = await comprometidoNoMes(db, mes, contaId, agora);
+  const tetoGeralBrl = arredondar2(config.tetoMensalBrl);
+  const saldoGeralBrl = arredondar2(dec(config.tetoMensalBrl).sub(comprometido.geral));
   const geracoesSemPreco = await contarGeracoesSemPreco(db, mes);
-  const base = { acao: config.acaoAoAtingirTeto, saldoGeralBrl, geracoesSemPreco };
+  const base = {
+    acao: config.acaoAoAtingirTeto,
+    saldoGeralBrl,
+    comprometidoGeralBrl: comprometido.geral,
+    tetoGeralBrl,
+    geracoesSemPreco,
+  };
 
   if (!(await orcamentoConfigurado(db, config.cotacaoUsdBrl))) {
     return { ...base, permitido: false, motivo: "orcamento_nao_configurado" };
@@ -136,15 +176,29 @@ export async function podeGastar(
   if (contaId) {
     const conta = await db.contaInstagram.findUnique({ where: { id: contaId }, select: { tetoMensalBrl: true } });
     if (conta?.tetoMensalBrl) {
-      saldoContaBrl = arredondar2(dec(conta.tetoMensalBrl).sub(await somaCustoBrl(db, mes, contaId)));
+      saldoContaBrl = arredondar2(dec(conta.tetoMensalBrl).sub(comprometido.conta));
     }
   }
 
-  if (arredondar2(gastoGeral.add(previsto)).gt(arredondar2(config.tetoMensalBrl))) {
+  if (arredondar2(comprometido.geral.add(previsto)).gt(tetoGeralBrl)) {
     return { ...base, saldoContaBrl, permitido: false, motivo: "teto_geral" };
   }
   if (saldoContaBrl !== undefined && arredondar2(previsto).gt(saldoContaBrl)) {
     return { ...base, saldoContaBrl, permitido: false, motivo: "teto_conta" };
   }
   return { ...base, saldoContaBrl, permitido: true };
+}
+
+/**
+ * Pode gastar `custoPrevistoBrl` agora? Leitura para a interface (sem trava).
+ * Quem vai gastar de fato usa reservarOrcamento (src/custos/reservas.ts).
+ * `acao` diz o que fazer quando não pode. Publicação nunca passa por aqui.
+ */
+export async function podeGastar(
+  contaId: string | null,
+  custoPrevistoBrl: ValorDecimal,
+  db: ClienteDb = obterDb(),
+  agora = new Date(),
+): Promise<DecisaoGasto> {
+  return avaliarGasto(db, contaId, custoPrevistoBrl, agora);
 }

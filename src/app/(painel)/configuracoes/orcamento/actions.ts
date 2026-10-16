@@ -5,6 +5,7 @@ import { z } from "zod";
 import { exigirSessao } from "@/auth/sessao";
 import type { EstadoFormulario } from "@/componentes/formulario-acao";
 import { ID_CONFIGURACAO, obterConfiguracao } from "@/custos/configuracao";
+import { recalcularGeracoesSemPreco } from "@/custos/registrar";
 import { obterDb } from "@/lib/db";
 import { CASAS, Decimal, parseValorBR } from "@/lib/dinheiro";
 
@@ -103,8 +104,15 @@ export async function salvarPreco(_a: EstadoFormulario, formData: FormData): Pro
     update: precos,
     create: { provedor, modelo, ...precos },
   });
+  // Gerações que estavam sem preço deste modelo passam a ter custo.
+  const recalculo = await recalcularGeracoesSemPreco(provedor, modelo);
   revalidatePath(CAMINHO);
-  return { ok: `Preços de ${modelo} salvos.` };
+  revalidatePath("/");
+  const extra =
+    recalculo.geracoes > 0
+      ? ` ${recalculo.geracoes} ${recalculo.geracoes === 1 ? "geração sem preço foi recalculada" : "gerações sem preço foram recalculadas"}.`
+      : "";
+  return { ok: `Preços de ${modelo} salvos.${extra}` };
 }
 
 export async function removerPreco(_a: EstadoFormulario, formData: FormData): Promise<EstadoFormulario> {
