@@ -7,7 +7,8 @@ import { emProducao, lerEnv } from "@/lib/env";
  * ficam em .armazenamento-local/ e são servidos pela rota /api/dev/arquivo
  * (que responde 404 em produção e exige sessão).
  */
-export const PASTA_LOCAL = path.join(process.cwd(), ".armazenamento-local");
+// turbopackIgnore: a pasta só existe em desenvolvimento; não deve ser rastreada para o deploy.
+export const PASTA_LOCAL = path.join(/* turbopackIgnore: true */ process.cwd(), ".armazenamento-local");
 
 export function r2Configurado(): boolean {
   try {
@@ -32,15 +33,15 @@ export function caminhoLocal(chave: string): string | null {
 export async function gravarLocal(chave: string, corpo: Buffer) {
   const caminho = caminhoLocal(chave);
   if (!caminho) throw new Error("Chave inválida.");
-  await mkdir(path.dirname(caminho), { recursive: true });
-  await writeFile(caminho, corpo);
+  await mkdir(/* turbopackIgnore: true */ path.dirname(caminho), { recursive: true });
+  await writeFile(/* turbopackIgnore: true */ caminho, corpo);
 }
 
 export async function lerLocal(chave: string): Promise<Buffer | null> {
   const caminho = caminhoLocal(chave);
   if (!caminho) return null;
   try {
-    return await readFile(caminho);
+    return await readFile(/* turbopackIgnore: true */ caminho);
   } catch {
     return null;
   }
