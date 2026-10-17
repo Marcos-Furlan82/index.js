@@ -1,0 +1,29 @@
+# dependências
+/node_modules
+.pnpm-store/
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# netlify
+.netlify/
+
+# prisma (client gerado no build)
+/src/generated/
+
+# testes
+/coverage/
+/tmp-testes/
+
+# ambiente (nunca versionar segredos)
+.env
+.env.*
+!.env.example
+
+# sistema
+.DS_Store
+*.log
+.armazenamento-local/

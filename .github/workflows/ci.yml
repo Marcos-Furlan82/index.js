@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Valores fictícios: nada aqui é segredo de verdade.
+  DATABASE_URL: postgresql://planejador:planejador@localhost:5432/planejador_teste
+  DIRECT_URL: postgresql://planejador:planejador@localhost:5432/planejador_teste
+  DATABASE_URL_TEST: postgresql://planejador:planejador@localhost:5432/planejador_teste
+  JOBS_SECRET: segredo-ficticio-do-ci-com-mais-de-32-caracteres
+  EMAIL_PROVEDOR: memoria
+  # Os testes nunca chamam a API real (cliente de IA falso).
+  ANTHROPIC_API_KEY: chave-ficticia-do-ci
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: planejador
+          POSTGRES_PASSWORD: planejador
+          POSTGRES_DB: planejador_teste
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U planejador"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Gerar client do Prisma
+        run: pnpm db:generate
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test:unit
+      - name: Aplicar migrations
+        run: pnpm db:migrate:deploy
+      - name: Conferir se o schema tem mudança sem migration
+        run: pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+      - name: Testes de integração (inclui o bundle das funções do Netlify)
+        run: pnpm test:integracao
+      - name: Build com variáveis fictícias
+        run: pnpm build
+
+  # Empacota o site como o Netlify faria (sem site vinculado, sem deploy).
+  # Não bloqueia: depende de downloads do Netlify (plugin do Next e Deno para a
+  # edge function do proxy). Torne obrigatório depois de vê-lo verde algumas vezes.
+  netlify-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: netlify build --offline (contexto de preview, sem migrations)
+        run: pnpm --package=netlify-cli@27.12.1 dlx netlify build --offline --context deploy-preview
+      - name: Conferir agendamento e Background Function no manifesto
+        run: |
+          node -e '
+            const m = require("./.netlify/functions/manifest.json");
+            const f = Object.fromEntries(m.functions.map((x) => [x.name, x]));
+            if (f["despachar-jobs"]?.schedule !== "*/2 * * * *") throw new Error("despachar-jobs sem schedule");
+            if (f["executar-jobs-background"]?.invocationMode !== "background") throw new Error("executor não é background");
+            console.log("Manifesto OK");
+          '
